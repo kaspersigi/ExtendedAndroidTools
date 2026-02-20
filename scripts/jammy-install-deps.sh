@@ -24,6 +24,7 @@ apt-get install -y \
      unzip \
      wget \
      zlib1g-dev \
-     zstd
+     zstd \
+     xxd
 
 echo "done"

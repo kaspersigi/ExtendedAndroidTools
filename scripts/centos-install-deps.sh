@@ -23,4 +23,5 @@ sudo dnf -y install \
      unzip \
      wget \
      zlib \
-     zstd
+     zstd \
+     xxd
