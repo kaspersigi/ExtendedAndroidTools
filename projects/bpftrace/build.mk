@@ -48,6 +48,6 @@ BPFTRACE_REPO = https://github.com/iovisor/bpftrace.git/
 projects/bpftrace/sources:
 	git clone $(BPFTRACE_REPO) $@ && \
 	cd $@ && \
-	git checkout $(BPFTRACE_COMMIT)
-	git apply --check ../tracefs_fallback_v0.24.2.patch
-	git apply ../tracefs_fallback_v0.24.2.patch
+	git checkout $(BPFTRACE_COMMIT) \
+	git apply --check ../tracefs_fallback_v0.24.2.patch \
+	git apply ../tracefs_fallback_v0.24.2.patch \
