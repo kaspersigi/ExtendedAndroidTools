@@ -5,13 +5,16 @@ $(eval $(call project-define,llvm))
 
 ifeq ($(NDK_ARCH), arm64)
 LLVM_DEFAULT_TARGET = AArch64
-LLVM_HOST_TRIPLE = aarch64-none-linux-gnu
+LLVM_HOST_TRIPLE = aarch64-linux-android
+LLVM_TARGET_TRIPLE = aarch64-linux-android
 else ifeq ($(NDK_ARCH), x86_64)
 LLVM_DEFAULT_TARGET = X86
-LLVM_HOST_TRIPLE = x86_64-none-linux-gnu
+LLVM_HOST_TRIPLE = x86_64-linux-android
+LLVM_TARGET_TRIPLE = x86_64-linux-android
 else ifeq ($(NDK_ARCH), armv7)
 LLVM_DEFAULT_TARGET = ARM
-LLVM_HOST_TRIPLE = armv7a-none-linux-gnueabi
+LLVM_HOST_TRIPLE = armv7a-linux-androideabi
+LLVM_TARGET_TRIPLE = armv7a-linux-androideabi
 else
 $(error unknown abi $(NDK_ARCH))
 endif
@@ -50,6 +53,7 @@ $(LLVM_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/clang-tblgen
 		-DLLVM_TABLEGEN=$(abspath $(HOST_OUT_DIR)/bin/llvm-tblgen) \
 		-DCLANG_TABLEGEN=$(abspath $(HOST_OUT_DIR)/bin/clang-tblgen) \
 		-DLLVM_HOST_TRIPLE=$(LLVM_HOST_TRIPLE) \
+		-DLLVM_DEFAULT_TARGET_TRIPLE=$(LLVM_TARGET_TRIPLE) \
 		-DLLVM_ENABLE_RTTI=yes \
 		-DLLVM_INCLUDE_GO_TESTS=OFF \
 		-DLLVM_INCLUDE_TESTS=OFF \
