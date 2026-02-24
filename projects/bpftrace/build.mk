@@ -50,4 +50,4 @@ projects/bpftrace/sources:
 	cd $@ && \
 	git checkout $(BPFTRACE_COMMIT) \
 	git apply --check ../tracefs_fallback_v0.24.2.patch \
-	git apply ../tracefs_fallback_v0.24.2.patch \
+	git apply ../tracefs_fallback_v0.24.2.patch
