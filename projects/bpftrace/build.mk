@@ -52,5 +52,4 @@ projects/bpftrace/sources:
 	git clone $(BPFTRACE_REPO) $@ && \
 	cd $@ && \
 	git checkout $(BPFTRACE_COMMIT) && \
-	git apply --check ../tracefs_fallback_v0.25.0.patch && \
-	git apply ../tracefs_fallback_v0.25.0.patch
+	{ git apply --verbose ../tracefs_fallback_v0.25.0.patch || (echo "Patch failed to apply, stopping build!" && exit 1); }

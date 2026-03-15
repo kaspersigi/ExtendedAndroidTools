@@ -80,7 +80,7 @@ $(LLVM_HOST_BUILD_DIR):
 		$(LLVM_EXTRA_HOST_FLAGS) \
 		-DCMAKE_BUILD_TYPE=Release
 
-LLVM_BRANCH_OR_TAG = llvmorg-21.1.8
+LLVM_BRANCH_OR_TAG = llvmorg-18.1.8
 LLVM_REPO = https://github.com/llvm/llvm-project
 projects/llvm/sources:
 	git clone $(LLVM_REPO) $@ --depth=1 -b $(LLVM_BRANCH_OR_TAG)

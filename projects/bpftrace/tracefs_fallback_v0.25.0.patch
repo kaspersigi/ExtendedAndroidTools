@@ -1,5 +1,5 @@
 diff --git a/src/attached_probe.cpp b/src/attached_probe.cpp
-index 92497b20..ff19dc5c 100644
+index 92497b20..7b41ebe9 100644
 --- a/src/attached_probe.cpp
 +++ b/src/attached_probe.cpp
 @@ -29,6 +29,7 @@
@@ -7,146 +7,208 @@ index 92497b20..ff19dc5c 100644
  #include "util/exceptions.h"
  #include "util/symbols.h"
 +#include "tracefs/tracefs.h"
- 
+
  namespace bpftrace {
- 
+
 @@ -460,6 +461,8 @@ AttachedKprobeProbe::~AttachedKprobeProbe()
- 
+
  int AttachedKprobeProbe::link_fd()
  {
 +  if (!link_)
 +    return -1;
    return bpf_link__fd(link_);
  }
- 
-@@ -470,7 +473,7 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
-   // Construct a string containing "module:function". We don't do any
-   // additional checking here because this has already been verified during
-   // attachpoint verification. We will automatically propagate any failures
+
+@@ -467,59 +470,141 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
+     Probe &probe,
+     const BpfProgram &prog)
+ {
+-  // Construct a string containing "module:function". We don't do any
+-  // additional checking here because this has already been verified during
+-  // attachpoint verification. We will automatically propagate any failures
 -  // to attach form the libbpf layer in the future.
-+  // to attach from the libbpf layer in the future.
-   std::string funcname;
-   if (!probe.path.empty() && probe.path != "vmlinux") {
-     funcname = probe.path + ":" + probe.attach_point;
-@@ -482,9 +485,6 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
-   uint64_t offset;
- 
-   // The kprobe can either be defined by a symbol+offset or an address:
+-  std::string funcname;
+-  if (!probe.path.empty() && probe.path != "vmlinux") {
+-    funcname = probe.path + ":" + probe.attach_point;
+-  } else {
+-    funcname = probe.attach_point;
+-  }
++    // Construct a string containing "module:function". We don't do any
++    // additional checking here because this has already been verified during
++    // attachpoint verification. We will automatically propagate any failures
++    // to attach from the libbpf layer in the future.
++    std::string funcname;
++    if (!probe.path.empty() && probe.path != "vmlinux") {
++        funcname = probe.path + ":" + probe.attach_point;
++    } else {
++        funcname = probe.attach_point;
++    }
+
+-  const char *kprobe_func;
+-  uint64_t offset;
++    const char *kprobe_func;
++    uint64_t offset;
++
++    // The kprobe can either be defined by a symbol+offset or an address:
++    bool is_symbol_kprobe = !probe.attach_point.empty();
++    if (is_symbol_kprobe) {
++        auto offset_res = resolve_offset_kprobe(probe);
++        if (!offset_res) {
++            LOG(ERROR) << "Failed to resolve offset for kprobe: " << probe.attach_point;
++            return offset_res.takeError();
++        }
++        kprobe_func = funcname.c_str();
++        offset = *offset_res;
++    } else {
++        if (probe.address == 0) {
++            LOG(ERROR) << "Probe address not set, cannot attach kprobe.";
++            return make_error<AttachError>("Probe address not set");
++        }
++        // The kernel interprets the offset as the absolute address if the symbol
++        // name is null; see alloc_trace_kprobe() in kernel/trace/trace_kprobe.c
++        kprobe_func = nullptr;
++        offset = probe.address;
++    }
+
+-  // The kprobe can either be defined by a symbol+offset or an address:
 -  // For symbol+offset kprobe, we need to check the validity of the offset.
 -  // Address kprobes are only allowed in unsafe mode so no validation is
 -  // performed -- the kernel will reject invalid probes.
-   bool is_symbol_kprobe = !probe.attach_point.empty();
-   if (is_symbol_kprobe) {
-     auto offset_res = resolve_offset_kprobe(probe);
-@@ -507,19 +507,98 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
-   opts.offset = offset;
-   opts.retprobe = probe.type == ProbeType::kretprobe;
- 
-+  // First attempt to attach using libbpf
-   auto *link = bpf_program__attach_kprobe_opts(prog.bpf_prog(),
-                                                kprobe_func,
-                                                &opts);
+-  bool is_symbol_kprobe = !probe.attach_point.empty();
+-  if (is_symbol_kprobe) {
+-    auto offset_res = resolve_offset_kprobe(probe);
+-    if (!offset_res) {
+-      return offset_res.takeError();
++    DECLARE_LIBBPF_OPTS(bpf_kprobe_opts, opts);
++    opts.offset = offset;
++    opts.retprobe = probe.type == ProbeType::kretprobe;
++
++    // First attempt to attach using libbpf
++    auto *link = bpf_program__attach_kprobe_opts(prog.bpf_prog(),
++                                                 kprobe_func,
++                                                 &opts);
++    if (link) {
++        LOG(V1) << "Successfully attached kprobe with libbpf for " << funcname;
++        return std::unique_ptr<AttachedKprobeProbe>(new AttachedKprobeProbe(probe, link));
+     }
+-    kprobe_func = funcname.c_str();
+-    offset = *offset_res;
+-  } else {
+-    if (probe.address == 0) {
+-      return make_error<AttachError>("Probe address not set");
++
++    // Log the libbpf error if attachment fails
++    LOG(ERROR) << "libbpf attach failed for " << funcname << ". errno: " << errno << " (" << strerror(errno) << ")";
++
++    // If libbpf attachment fails, check for tracefs fallback
++    if (errno == EPERM || errno == ENOENT) {
++        LOG(V1) << "libbpf failed to attach k[ret]probe, trying tracefs fallback...";
++
++        // Attempt to create and attach probe using tracefs
++        std::string ev_name = eventname(probe, offset);
++        bool is_retprobe = probe.type == ProbeType::kretprobe;
++
++        int id = tracefs::create_tracefs_kprobe(ev_name,
++                                                is_retprobe,
++                                                probe.attach_point,
++                                                offset,
++                                                probe.path);
++        if (id < 0) {
++            LOG(ERROR) << "tracefs fallback failed to create event " << ev_name;
++            return make_error<AttachError>("tracefs fallback failed to create event");
++        }
++
++        // Create perf event attributes for each CPU
++        struct perf_event_attr attr = {};
++        attr.type = PERF_TYPE_TRACEPOINT;
++        attr.size = sizeof(attr);
++        attr.config = id;
++        attr.sample_period = 1;
++        attr.sample_type = PERF_SAMPLE_RAW;
++        attr.wakeup_events = 1;
++
++        // Open perf event file descriptors for each CPU
++        std::vector<int> fds;
++        for (int cpu : util::get_online_cpus()) {
++            int pfd = syscall(__NR_perf_event_open, &attr, -1, cpu, -1, 0);
++            if (pfd < 0) {
++                LOG(ERROR) << "perf_event_open failed for CPU " << cpu << ": " << strerror(errno);
++                // Clean up any previously opened fds
++                for (int fd_to_close : fds) {
++                    close(fd_to_close);
++                }
++                tracefs::detach_kprobe(ev_name);
++                return make_error<AttachError>();
++            }
++
++            if (ioctl(pfd, PERF_EVENT_IOC_SET_BPF, prog.fd()) < 0) {
++                LOG(ERROR) << "Error attaching BPF program to kprobe on CPU " << cpu << ": " << strerror(errno);
++                close(pfd);
++                // Clean up already opened FDs
++                for (int fd_to_close : fds) {
++                    close(fd_to_close);
++                }
++                tracefs::detach_kprobe(ev_name);
++                return make_error<AttachError>();
++            }
++
++            if (ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
++                LOG(ERROR) << "Error enabling perf event on CPU " << cpu << ": " << strerror(errno);
++                close(pfd);
++                // Clean up already opened FDs
++                for (int fd_to_close : fds) {
++                    close(fd_to_close);
++                }
++                tracefs::detach_kprobe(ev_name);
++                return make_error<AttachError>();
++            }
++
++            fds.push_back(pfd);
++        }
++
++        // Store perf event file descriptors and set tracefs flag
++        probe.perf_event_fds = fds;
++        probe.attached_via_tracefs = true;
++
++        LOG(V1) << "tracefs fallback successful for " << ev_name << ", attached on " << fds.size() << " CPUs.";
++
++        return std::unique_ptr<AttachedKprobeProbe>(new AttachedKprobeProbe(probe, nullptr));  // No libbpf link needed for tracefs
+     }
+-    // The kernel interprets the offset as the absolute address if the symbol
+-    // name is null; see alloc_trace_kprobe() in kernel/trace/trace_kprobe.c
+-    kprobe_func = nullptr;
+-    offset = probe.address;
+-  }
+
+-  DECLARE_LIBBPF_OPTS(bpf_kprobe_opts, opts);
+-  opts.offset = offset;
+-  opts.retprobe = probe.type == ProbeType::kretprobe;
++    // Handle other errors
++    if (errno == EILSEQ) {
++        LOG(ERROR) << "Possible attachment attempt in the middle of an instruction, try a different offset.";
++        return make_error<AttachError>(
++            "Possible attachment attempt in the middle of an instruction, try a different offset.");
++    }
+
+-  auto *link = bpf_program__attach_kprobe_opts(prog.bpf_prog(),
+-                                               kprobe_func,
+-                                               &opts);
 -  if (!link) {
 -    if (errno == EILSEQ)
 -      return make_error<AttachError>(
 -          "Possible attachment attempt in the middle of an instruction, "
 -          "try a different offset.");
--    return make_error<AttachError>();
-+  if (link) {
-+    return std::unique_ptr<AttachedKprobeProbe>(
-+        new AttachedKprobeProbe(probe, link));
-+  }
-+
-+  // If libbpf attachment fails, check for tracefs fallback
-+  if (errno == EPERM || errno == ENOENT) {
-+    LOG(V1)
-+        << "libbpf failed to attach k[ret]probe, trying tracefs fallback...";
-+
-+    // Attempt to create and attach probe using tracefs
-+    std::string ev_name = eventname(probe, offset);
-+    bool is_retprobe = probe.type == ProbeType::kretprobe;
-+
-+    int id = tracefs::create_tracefs_kprobe(
-+        ev_name, is_retprobe, probe.attach_point, offset, probe.path);
-+    if (id < 0) {
-+      return make_error<AttachError>("tracefs fallback failed to create event");
-+    }
-+
-+    // Create perf event attributes for each CPU
-+    struct perf_event_attr attr = {};
-+    attr.type = PERF_TYPE_TRACEPOINT;
-+    attr.size = sizeof(attr);
-+    attr.config = id;
-+    attr.sample_period = 1;
-+    attr.sample_type = PERF_SAMPLE_RAW;
-+    attr.wakeup_events = 1;
-+
-+    // Open perf event file descriptors for each CPU
-+    std::vector<int> fds;
-+    for (int cpu : util::get_online_cpus()) {
-+      int pfd = syscall(__NR_perf_event_open, &attr, -1, cpu, -1, 0);
-+      if (pfd < 0) {
-+        LOG(ERROR) << "perf_event_open failed for CPU " << cpu << ": "
-+                   << strerror(errno);
-+        // Clean up any previously opened fds
-+        for (int fd_to_close : fds) {
-+          close(fd_to_close);
-+        }
-+        tracefs::detach_kprobe(ev_name);
-+        return make_error<AttachError>();
-+      }
-+
-+      if (ioctl(pfd, PERF_EVENT_IOC_SET_BPF, prog.fd()) < 0) {
-+        LOG(ERROR) << "error attaching bpf program to kprobe on CPU " << cpu
-+                   << ": " << strerror(errno);
-+        close(pfd);
-+        for (int fd_to_close : fds) {
-+          close(fd_to_close);
-+        }
-+        tracefs::detach_kprobe(ev_name);
-+        return make_error<AttachError>();
-+      }
-+
-+      if (ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
-+        LOG(ERROR) << "error enabling perf event on CPU " << cpu << ": "
-+                   << strerror(errno);
-+        close(pfd);
-+        for (int fd_to_close : fds) {
-+          close(fd_to_close);
-+        }
-+        tracefs::detach_kprobe(ev_name);
-+        return make_error<AttachError>();
-+      }
-+
-+      fds.push_back(pfd);
-+    }
-+
-+    // Store perf event file descriptors and set tracefs flag
-+    probe.perf_event_fds = fds;
-+    probe.attached_via_tracefs = true;
-+
-+    LOG(V1) << "tracefs fallback successful, attached on " << fds.size()
-+            << " CPUs.";
-+
-+    return std::unique_ptr<AttachedKprobeProbe>(
-+        new AttachedKprobeProbe(probe, nullptr)); // No libbpf link needed for
-+                                                  // tracefs
-   }
- 
++    // Return error if unable to attach
+     return make_error<AttachError>();
+-  }
+-
 -  return std::unique_ptr<AttachedKprobeProbe>(
 -      new AttachedKprobeProbe(probe, link));
-+  // Handle other errors
-+  if (errno == EILSEQ) {
-+    return make_error<AttachError>(
-+        "Possible attachment attempt in the middle of an instruction, "
-+        "try a different offset.");
-+  }
-+  return make_error<AttachError>();
  }
- 
+
  class AttachedMultiKprobeProbe : public AttachedProbe {
-@@ -619,9 +698,22 @@ AttachedUprobeProbe::AttachedUprobeProbe(const Probe &probe,
- 
+@@ -619,9 +704,22 @@ AttachedUprobeProbe::AttachedUprobeProbe(const Probe &probe,
+
  AttachedUprobeProbe::~AttachedUprobeProbe()
  {
 -  if (bpf_link__destroy(link_))
@@ -167,7 +229,7 @@ index 92497b20..ff19dc5c 100644
                   << strerror(errno);
 +  }
  }
- 
+
  int AttachedUprobeProbe::link_fd()
 diff --git a/src/probe_types.h b/src/probe_types.h
 index 87a6d2ce..0ba8f9a2 100644
@@ -179,7 +241,7 @@ index 87a6d2ce..0ba8f9a2 100644
    bool is_session = false;
 +  bool attached_via_tracefs = false;
 +  std::vector<int> perf_event_fds;
- 
+
  private:
    friend class cereal::access;
 diff --git a/src/tracefs/tracefs.cpp b/src/tracefs/tracefs.cpp
@@ -195,15 +257,15 @@ index 75dda379..569fc0d8 100644
 +#include <fstream>
 +#include <sstream>
 +#include <vector>
- 
+
 +#include "log.h"
  #include "tracefs.h"
- 
+
  namespace bpftrace::tracefs {
 @@ -24,4 +32,95 @@ std::string event_format_file(const std::string &category,
    return path("events/" + category + "/" + event + "/format");
  }
- 
+
 +constexpr const char *kprobe_events = "kprobe_events";
 +
 +static int write_kprobe(const std::string &ev_name,
@@ -303,7 +365,7 @@ index cd832080..683be109 100644
 @@ -26,4 +26,16 @@ inline std::string available_filter_functions()
  std::string event_format_file(const std::string &category,
                                const std::string &event);
- 
+
 +// Attach a kprobe via tracefs and return its tracepoint ID.
 +// Returns a valid ID on success, -1 on failure.
 +int create_tracefs_kprobe(const std::string &ev_name,
