@@ -18,7 +18,7 @@ endif
 
 STRIP_THUNK = $(HOST_OUT_DIR)/bpftrace-strip-thunk
 
-$(BPFTRACE_ANDROID): $(ANDROID_OUT_DIR)/lib/libc++_shared.so
+$(BPFTRACE_ANDROID): $(ANDROID_OUT_DIR)/lib/libc++_shared.so $(LIBBPF_ANDROID)
 ifeq ($(BUILD_TYPE), Debug)
 	cd $(BPFTRACE_ANDROID_BUILD_DIR) && $(MAKE) install -j $(THREADS)
 else
@@ -27,7 +27,7 @@ endif
 	cp $(BPFTRACE_SRCS)/LICENSE $(ANDROID_OUT_DIR)/licenses/bpftrace
 	touch $@
 
-$(BPFTRACE_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/flex $(STRIP_THUNK)
+$(BPFTRACE_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/flex $(STRIP_THUNK) $(LIBBPF_ANDROID)
 	-mkdir $@
 	cd $@ && LDFLAGS="$(BPFTRACE_EXTRA_LDFLAGS)" $(CMAKE) $(BPFTRACE_SRCS) \
 		$(ANDROID_EXTRA_CMAKE_FLAGS) \
@@ -37,17 +37,19 @@ $(BPFTRACE_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/flex $(STRIP_THUNK)
 		-DFLEX_EXECUTABLE=$(abspath $(HOST_OUT_DIR)/bin/flex) \
 		-DUSE_SYSTEM_BPF_BCC=ON \
 		-DALLOW_UNSAFE_PROBE=ON \
-		-DCMAKE_STRIP=$(abspath $(STRIP_THUNK))
+		-DCMAKE_STRIP=$(abspath $(STRIP_THUNK)) \
+		-DLIBBPF_INCLUDE_DIRS=$(abspath $(ANDROID_OUT_DIR))/include \
+		-DLIBBPF_LIBRARIES=$(abspath $(ANDROID_OUT_DIR))/lib/libbpf.a
 
 $(STRIP_THUNK): projects/bpftrace/strip-thunk | $(HOST_OUT_DIR)
 	@sed -e "s+<STRIP_PATH>+$(ANDROID_TOOLCHAIN_STRIP_PATH)+g" $< > $@
 	chmod +x $@
 
-BPFTRACE_COMMIT = v0.25.0
+BPFTRACE_COMMIT = v0.24.2
 BPFTRACE_REPO = https://github.com/iovisor/bpftrace.git/
 projects/bpftrace/sources:
 	git clone $(BPFTRACE_REPO) $@ && \
 	cd $@ && \
 	git checkout $(BPFTRACE_COMMIT) && \
-	git apply --check ../tracefs_fallback_v0.25.0.patch && \
-	git apply ../tracefs_fallback_v0.25.0.patch
+	git apply --check ../tracefs_fallback_v0.24.2.patch && \
+	git apply ../tracefs_fallback_v0.24.2.patch
