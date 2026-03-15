@@ -1,8 +1,16 @@
 diff --git a/src/attached_probe.cpp b/src/attached_probe.cpp
-index 92497b20..7344031e 100644
+index 92497b20..ff19dc5c 100644
 --- a/src/attached_probe.cpp
 +++ b/src/attached_probe.cpp
-@@ -460,6 +460,8 @@ AttachedKprobeProbe::~AttachedKprobeProbe()
+@@ -29,6 +29,7 @@
+ #include "util/cpus.h"
+ #include "util/exceptions.h"
+ #include "util/symbols.h"
++#include "tracefs/tracefs.h"
+ 
+ namespace bpftrace {
+ 
+@@ -460,6 +461,8 @@ AttachedKprobeProbe::~AttachedKprobeProbe()
  
  int AttachedKprobeProbe::link_fd()
  {
@@ -11,7 +19,7 @@ index 92497b20..7344031e 100644
    return bpf_link__fd(link_);
  }
  
-@@ -470,7 +472,7 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
+@@ -470,7 +473,7 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
    // Construct a string containing "module:function". We don't do any
    // additional checking here because this has already been verified during
    // attachpoint verification. We will automatically propagate any failures
@@ -20,7 +28,7 @@ index 92497b20..7344031e 100644
    std::string funcname;
    if (!probe.path.empty() && probe.path != "vmlinux") {
      funcname = probe.path + ":" + probe.attach_point;
-@@ -482,9 +484,6 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
+@@ -482,9 +485,6 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
    uint64_t offset;
  
    // The kprobe can either be defined by a symbol+offset or an address:
@@ -30,7 +38,7 @@ index 92497b20..7344031e 100644
    bool is_symbol_kprobe = !probe.attach_point.empty();
    if (is_symbol_kprobe) {
      auto offset_res = resolve_offset_kprobe(probe);
-@@ -507,19 +506,98 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
+@@ -507,19 +507,98 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
    opts.offset = offset;
    opts.retprobe = probe.type == ProbeType::kretprobe;
  
@@ -137,7 +145,7 @@ index 92497b20..7344031e 100644
  }
  
  class AttachedMultiKprobeProbe : public AttachedProbe {
-@@ -619,9 +697,22 @@ AttachedUprobeProbe::AttachedUprobeProbe(const Probe &probe,
+@@ -619,9 +698,22 @@ AttachedUprobeProbe::AttachedUprobeProbe(const Probe &probe,
  
  AttachedUprobeProbe::~AttachedUprobeProbe()
  {
