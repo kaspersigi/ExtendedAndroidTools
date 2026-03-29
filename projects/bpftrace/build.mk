@@ -46,10 +46,10 @@ $(STRIP_THUNK): projects/bpftrace/strip-thunk | $(HOST_OUT_DIR)
 	@sed -e "s+<STRIP_PATH>+$(ANDROID_TOOLCHAIN_STRIP_PATH)+g" $< > $@
 	chmod +x $@
 
-BPFTRACE_COMMIT = v0.25.0
+BPFTRACE_COMMIT = v0.25.1
 BPFTRACE_REPO = https://github.com/iovisor/bpftrace.git/
 projects/bpftrace/sources:
 	git clone $(BPFTRACE_REPO) $@ && \
 	cd $@ && \
 	git checkout $(BPFTRACE_COMMIT) && \
-	{ git apply --verbose ../tracefs_fallback_v0.25.0.patch || (echo "Patch failed to apply, stopping build!" && exit 1); }
+	{ git apply --verbose ../tracefs_fallback_v0.25.1.patch || (echo "Patch failed to apply, stopping build!" && exit 1); }
