@@ -20,9 +20,9 @@ $(FLEX_HOST):
 
 $(FLEX_HOST_BUILD_DIR):
 	-mkdir $@
-	cd $@ && $(FLEX_SRCS)/configure --prefix=$(abspath $(HOST_OUT_DIR))
+	cd $@ && $(FLEX_SRCS)/configure --disable-bootstrap --prefix=$(abspath $(HOST_OUT_DIR))
 
-FLEX_COMMIT_HASH = 98018e3f58d79e082216d406866942841d4bdf8a
+FLEX_COMMIT_HASH = 4fcc71489ae298c35b0b786114ad524945f2cf95
 FLEX_REPO = https://github.com/westes/flex.git
 projects/flex/sources:
 ifeq ($(shell whoami), vagrant)

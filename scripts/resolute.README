@@ -1,0 +1,1026 @@
+# ExtendedAndroidTools Ubuntu 26.04 (Resolute) 本地构建说明
+
+本文档介绍以下两个脚本：
+
+- `scripts/resolute-install-deps.sh`
+- `scripts/resolute-local-build.sh`
+
+它们用于在 Ubuntu 26.04（代号 Resolute）x86_64 主机上直接构建
+ExtendedAndroidTools，不依赖 Docker 构建环境。
+
+`resolute-install-deps.sh` 负责安装主机依赖；
+`resolute-local-build.sh` 负责选择或下载 Android NDK、校验构建环境、清理可选缓存，
+以及调用项目 Makefile 完成本地交叉编译。
+
+
+## 1. 适用环境
+
+默认支持：
+
+- 主机发行版：Ubuntu 26.04（Resolute）
+- 主机架构：x86_64
+- Android NDK：r27d
+- Android API：35
+- Android 目标架构：arm64
+- 构建类型：Release
+- 并行线程数：主机 `nproc` 返回的逻辑 CPU 数
+
+构建脚本目前使用 NDK 的 `linux-x86_64` 预编译工具链，所以即使设置
+`ALLOW_UNSUPPORTED_HOST=1`，主机架构仍然必须是 x86_64。
+
+`ALLOW_UNSUPPORTED_HOST=1` 只跳过 Ubuntu 26.04 发行版检查，不表示其他发行版已经
+测试或保证可用。
+
+
+## 2. 最简构建流程
+
+进入项目根目录：
+
+```bash
+cd /mnt/develop/linux/ExtendedAndroidTools
+```
+
+安装构建依赖：
+
+```bash
+./scripts/resolute-install-deps.sh
+```
+
+执行默认的 arm64、API 35、Release 构建：
+
+```bash
+./scripts/resolute-local-build.sh
+```
+
+默认目标为 `bpftools`。成功后主要产物为：
+
+```text
+bpftools-arm64.tar.gz
+```
+
+中间文件和安装输出分别位于：
+
+```text
+build/
+out/
+projects/*/sources/
+```
+
+以下生成内容均由仓库 `.gitignore` 忽略：
+
+```text
+build/
+out/
+projects/*/sources/
+bpftools-*.tar.gz
+```
+
+因此，正常下载源码和执行构建不会把这些生成产物加入 Git 工作区状态。
+
+
+## 3. resolute-install-deps.sh
+
+### 3.1 功能
+
+`resolute-install-deps.sh` 使用 Ubuntu 的 `apt-get` 安装本地构建所需的主机软件包。
+
+脚本会执行：
+
+```text
+apt-get update
+apt-get install -y --no-install-recommends ...
+```
+
+普通用户运行时使用 `sudo apt-get`；root 用户运行时直接使用 `apt-get`。
+
+脚本安装的依赖包括：
+
+```text
+autoconf
+automake
+autopoint
+bison
+build-essential
+bzip2
+ca-certificates
+curl
+flex
+g++
+gettext
+git
+help2man
+libssl-dev
+libtool
+make
+patch
+pkg-config
+po4a
+python3
+tar
+texinfo
+unzip
+wget
+xxd
+zlib1g-dev
+zstd
+```
+
+该脚本只安装主机软件包，不会：
+
+- 下载或删除 Android NDK；
+- 下载项目第三方源码；
+- 启动项目构建；
+- 使用 Docker；
+- 修改项目源码版本。
+
+### 3.2 基本用法
+
+```bash
+./scripts/resolute-install-deps.sh
+```
+
+查看帮助：
+
+```bash
+./scripts/resolute-install-deps.sh --help
+```
+
+在非 Ubuntu 26.04 系统上跳过发行版检查：
+
+```bash
+ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-install-deps.sh
+```
+
+这只表示允许脚本继续执行。软件包名称、版本和兼容性仍由当前发行版负责，脚本不会
+自动适配其他发行版。
+
+如果以普通用户运行且系统没有 `sudo`，脚本会报错退出。此时需要安装 `sudo`，或由
+root 用户执行脚本。
+
+
+## 4. resolute-local-build.sh
+
+### 4.1 功能
+
+`resolute-local-build.sh` 是 Ubuntu 26.04 的本地构建入口，主要执行以下工作：
+
+1. 根据环境变量解析构建参数；
+2. 可选地执行模块源码清理或全量清理；
+3. 检查 Ubuntu 版本和 x86_64 主机架构；
+4. 检查本地构建命令是否齐全；
+5. 选择已有 Android NDK，或在需要时下载 NDK；
+6. 检查对应架构和 API 的 NDK Clang 驱动是否存在；
+7. 将参数传给项目 Makefile，执行本地交叉编译。
+
+脚本通过自身路径定位项目根目录，因此不要求当前 shell 必须位于项目根目录。
+
+### 4.2 命令格式
+
+```bash
+./scripts/resolute-local-build.sh [make-target ...]
+```
+
+没有传入 Make 目标时，使用 `BUILD_TARGET`；`BUILD_TARGET` 的默认值为 `bpftools`。
+
+传入位置参数后，位置参数会覆盖 `BUILD_TARGET`：
+
+```bash
+./scripts/resolute-local-build.sh bpftools-min
+```
+
+也可以构建单独模块：
+
+```bash
+./scripts/resolute-local-build.sh llvm
+./scripts/resolute-local-build.sh bcc
+./scripts/resolute-local-build.sh bpftrace
+./scripts/resolute-local-build.sh python
+```
+
+位置参数最终会原样作为 Make 目标传递，因此也可以使用仓库 Makefile 提供的其他合法
+目标。
+
+查看脚本帮助：
+
+```bash
+./scripts/resolute-local-build.sh --help
+```
+
+
+## 5. 构建参数
+
+所有参数都在 `resolute-local-build.sh` 顶部提供默认值，也可以在执行脚本时通过环境
+变量覆盖。
+
+### 5.1 BUILD_TARGET
+
+默认值：
+
+```text
+bpftools
+```
+
+指定没有位置参数时使用的 Make 目标：
+
+```bash
+BUILD_TARGET=bpftools-min ./scripts/resolute-local-build.sh
+```
+
+如果同时传入位置参数，则位置参数优先。
+
+### 5.2 THREADS
+
+默认值：
+
+```bash
+$(nproc)
+```
+
+该值传给项目内部的并行构建命令：
+
+```bash
+THREADS=16 ./scripts/resolute-local-build.sh
+```
+
+必须是大于零的整数。默认使用全部逻辑 CPU；如果主机内存不足或需要限制负载，可以
+手动降低。
+
+### 5.3 NDK_API
+
+默认值：
+
+```text
+35
+```
+
+示例：
+
+```bash
+NDK_API=30 ./scripts/resolute-local-build.sh
+```
+
+脚本会检查 NDK 中是否存在对应 API 的 Clang 驱动，例如 arm64、API 35 对应：
+
+```text
+toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
+```
+
+`NDK_API` 必须是大于零的整数。需要在较低 Android 版本上运行时，应根据目标设备选择
+合适的最低 API，同时确保所选 NDK 提供对应工具链入口。
+
+### 5.4 NDK_ARCH
+
+默认值：
+
+```text
+arm64
+```
+
+支持以下值：
+
+| NDK_ARCH | Android 编译三元组 | 典型设备架构 |
+| --- | --- | --- |
+| `arm64` | `aarch64-linux-android` | 64 位 ARM Android 设备 |
+| `x86_64` | `x86_64-linux-android` | 64 位 x86 Android 设备/模拟器 |
+| `armv7` | `armv7a-linux-androideabi` | 32 位 ARM Android 设备 |
+
+示例：
+
+```bash
+NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh
+NDK_ARCH=armv7 ./scripts/resolute-local-build.sh
+```
+
+不同架构的 Android 构建目录位于：
+
+```text
+build/android/<NDK_ARCH>/
+out/android/<NDK_ARCH>/
+```
+
+### 5.5 NDK_VERSION
+
+默认值：
+
+```text
+r27d
+```
+
+该值用于组成首选 NDK 路径、下载文件名和临时缓存目录：
+
+```bash
+NDK_VERSION=r27d ./scripts/resolute-local-build.sh
+```
+
+如果修改 NDK 版本，需要确保 Google 下载地址中存在相应的
+`android-ndk-<version>-linux.zip`，或者同时提供 `NDK_DOWNLOAD_URL`。
+
+### 5.6 NDK_PATH
+
+默认值为空。
+
+显式指定 NDK 目录时，它具有最高优先级：
+
+```bash
+NDK_PATH=/opt/android-ndk-r27d ./scripts/resolute-local-build.sh
+```
+
+如果显式目录不存在或缺少当前架构/API 的编译器，脚本直接报错，不会自动改用其他
+NDK。
+
+### 5.7 PREFERRED_NDK_PATH
+
+默认值：
+
+```text
+/mnt/develop/android-ndk-r27d
+```
+
+实际默认值根据 `NDK_VERSION` 组成：
+
+```text
+/mnt/develop/android-ndk-${NDK_VERSION}
+```
+
+可以覆盖首选路径：
+
+```bash
+PREFERRED_NDK_PATH=/data/android/android-ndk-r27d \
+    ./scripts/resolute-local-build.sh
+```
+
+### 5.8 NDK_TMP_DIR
+
+默认值：
+
+```text
+/tmp
+```
+
+当没有显式 NDK，首选 NDK 也不存在时，脚本使用：
+
+```text
+${NDK_TMP_DIR}/android-ndk-${NDK_VERSION}
+```
+
+作为下载后的 NDK 缓存路径。
+
+示例：
+
+```bash
+NDK_TMP_DIR=/var/tmp ./scripts/resolute-local-build.sh
+```
+
+下载首先发生在 `NDK_TMP_DIR` 下的随机 staging 目录中；下载和解压成功后才移动到最终
+缓存路径。staging 目录在成功或失败后都会清理。
+
+最终 NDK 缓存不会在构建完成后自动删除，以便后续复用。
+
+### 5.9 NDK_DOWNLOAD_URL
+
+默认值为空，此时使用 Google 官方形式的下载地址：
+
+```text
+https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
+```
+
+可以指定完整下载 URL：
+
+```bash
+NDK_DOWNLOAD_URL=https://example.invalid/android-ndk-r27d-linux.zip \
+    ./scripts/resolute-local-build.sh
+```
+
+自定义压缩包解压后仍必须包含名为 `android-ndk-${NDK_VERSION}` 的顶层目录。
+
+### 5.10 DOWNLOAD_NDK
+
+默认值：
+
+```text
+1
+```
+
+设置为 `0` 可以禁止自动下载：
+
+```bash
+DOWNLOAD_NDK=0 ./scripts/resolute-local-build.sh
+```
+
+此时如果没有找到已有 NDK，脚本会报错退出。
+
+### 5.11 BUILD_TYPE
+
+默认值：
+
+```text
+Release
+```
+
+支持：
+
+```text
+Release
+Debug
+```
+
+Debug 示例：
+
+```bash
+BUILD_TYPE=Debug ./scripts/resolute-local-build.sh
+```
+
+其他大小写或其他值都会被拒绝。
+
+### 5.12 STATIC_LINKING
+
+默认值：
+
+```text
+false
+```
+
+必须是 `true` 或 `false`：
+
+```bash
+STATIC_LINKING=true ./scripts/resolute-local-build.sh
+```
+
+该值传给项目 Makefile，用于支持静态链接的组件。是否能够完全静态化仍取决于具体
+项目、NDK 和依赖库的构建规则。
+
+### 5.13 LLVM_BPF_ONLY
+
+默认值：
+
+```text
+false
+```
+
+设置为 `true` 时，只为 LLVM 启用 BPF target：
+
+```bash
+LLVM_BPF_ONLY=true ./scripts/resolute-local-build.sh
+```
+
+这样可以缩小 LLVM 构建内容，但并非所有工具都能工作。例如 BCC 的 rwengine 还需要
+当前 Android 架构对应的 LLVM target。需要完整功能时应保留默认值 `false`。
+
+### 5.14 ALLOW_UNSUPPORTED_HOST
+
+默认值：
+
+```text
+0
+```
+
+跳过 Ubuntu 26.04 发行版检查：
+
+```bash
+ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
+```
+
+该变量不会跳过 x86_64 检查，也不会自动修复其他系统上的依赖、编译器或 ABI 差异。
+
+
+## 6. Android NDK 选择顺序
+
+脚本按以下顺序选择 NDK：
+
+1. 如果 `NDK_PATH` 非空，直接使用 `NDK_PATH`；
+2. 否则，如果 `PREFERRED_NDK_PATH` 已存在，使用该目录；
+3. 否则，检查 `${NDK_TMP_DIR}/android-ndk-${NDK_VERSION}`；
+4. 如果临时缓存也不存在并且 `DOWNLOAD_NDK=1`，现场下载和解压；
+5. 最后验证当前架构和 API 对应的 Clang 驱动是否可执行。
+
+默认情况下，这一顺序等价于：
+
+```text
+显式 NDK_PATH
+  -> /mnt/develop/android-ndk-r27d
+  -> /tmp/android-ndk-r27d
+  -> 下载到 /tmp/android-ndk-r27d
+```
+
+如果已选择的显式目录或首选目录存在但内容不完整，脚本不会覆盖它，也不会静默回退到
+另一个 NDK，而是报错退出。
+
+如果 `/tmp/android-ndk-r27d` 已存在但不完整，脚本同样不会覆盖。应先检查目录内容，
+确认不再需要后再由用户手动处理。
+
+
+## 7. 构建目标与产物
+
+### 7.1 bpftools
+
+默认完整包：
+
+```bash
+./scripts/resolute-local-build.sh bpftools
+```
+
+主要包含：
+
+- `bpftrace`；
+- 可用时包含 `bpftrace-aotrt`；
+- Python 3.10 可执行程序和运行库；
+- BCC 与 BPF 相关动态库；
+- `libclang.so`；
+- `libbpf`、`libelf`、`liblzma`、`libffi` 等运行库；
+- bcc 与 bpftrace 的共享数据；
+- 启动包装脚本和许可证文件。
+
+产物名称由 `NDK_ARCH` 决定：
+
+```text
+bpftools-arm64.tar.gz
+bpftools-x86_64.tar.gz
+bpftools-armv7.tar.gz
+```
+
+### 7.2 bpftools-min
+
+精简包：
+
+```bash
+./scripts/resolute-local-build.sh bpftools-min
+```
+
+精简包保留 bpftrace 运行所需的核心二进制和库，不包含完整包中的 Python 环境、
+`libbcc.so` 和 bcc 共享数据。
+
+产物名称为：
+
+```text
+bpftools-min-arm64.tar.gz
+bpftools-min-x86_64.tar.gz
+bpftools-min-armv7.tar.gz
+```
+
+### 7.3 单独构建模块
+
+可以传入项目 Makefile 中的模块目标，例如：
+
+```bash
+./scripts/resolute-local-build.sh llvm
+./scripts/resolute-local-build.sh bcc
+./scripts/resolute-local-build.sh bpftrace
+./scripts/resolute-local-build.sh python
+./scripts/resolute-local-build.sh xz
+```
+
+单独构建模块主要用于开发和定位编译问题，不一定生成最终的 `bpftools-*.tar.gz`。
+
+
+## 8. 清理功能
+
+默认不执行清理，因此普通运行属于增量构建：
+
+```bash
+./scripts/resolute-local-build.sh
+```
+
+清理参数包括：
+
+- `CLEAN_MODULES`
+- `CLEAN_ALL`
+- `CLEAN_ONLY`
+
+三种最常用的执行方式如下：
+
+```bash
+# 清理 LLVM 源码和共享构建产物，然后立即开始构建
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+
+# 只清理 LLVM 源码和共享构建产物，清理完成后退出
+CLEAN_MODULES=llvm CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+
+# 如果上一步已经只执行了清理，使用普通构建命令开始构建
+./scripts/resolute-local-build.sh
+```
+
+只要设置 `CLEAN_ONLY=1`，脚本完成清理后就一定退出，不会继续检查 NDK 或启动构建。
+如果希望“清理后立即构建”，不要设置 `CLEAN_ONLY=1`。
+
+### 8.1 CLEAN_MODULES
+
+指定一个或多个需要删除源码缓存并重新获取的模块。
+
+单模块：
+
+```bash
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+```
+
+逗号分隔多个模块：
+
+```bash
+CLEAN_MODULES=llvm,bcc ./scripts/resolute-local-build.sh
+```
+
+空格分隔时需要引号：
+
+```bash
+CLEAN_MODULES="llvm bcc" ./scripts/resolute-local-build.sh
+```
+
+模块名称会先通过 Makefile 的 `remove-<module>-sources` 目标校验。无效模块会在任何清理
+发生之前报错退出。
+
+需要特别注意：多个项目会把安装文件写入共享的 `out/` 目录，Makefile 没有完整的
+逐模块安装清单。因此为了避免残留旧库或 ABI 不一致，设置 `CLEAN_MODULES` 时会：
+
+1. 删除整个 `build/`；
+2. 删除整个 `out/`；
+3. 删除根目录下的 `bpftools-*.tar.gz`；
+4. 只删除 `CLEAN_MODULES` 指定模块的源码缓存；
+5. 默认继续执行构建。
+
+也就是说，构建产物会全量重建，但没有被指定的其他模块源码仍然保留，不需要重新
+下载。
+
+LLVM 版本切换示例：
+
+```bash
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+```
+
+这会删除旧的 `projects/llvm/sources` 和全部构建输出，然后根据
+`projects/llvm/build.mk` 当前设置的 tag 重新下载 LLVM 并开始构建。
+
+### 8.2 CLEAN_ALL
+
+完整清理全部构建产物和全部已下载项目源码，然后重新构建：
+
+```bash
+CLEAN_ALL=1 ./scripts/resolute-local-build.sh
+```
+
+该操作会删除：
+
+```text
+build/
+out/
+projects/*/sources/
+bpftools-*.tar.gz
+```
+
+它不会删除仓库外的 NDK，包括：
+
+```text
+/mnt/develop/android-ndk-r27d
+/tmp/android-ndk-r27d
+```
+
+`CLEAN_ALL=1` 和非空的 `CLEAN_MODULES` 不能同时使用。
+
+### 8.3 CLEAN_ONLY
+
+默认值为 `0`。设置为 `1` 时，只执行已经请求的清理，不启动后续构建。
+
+需要特别注意：`CLEAN_ONLY` 的含义是“仅清理”，不是“使用干净环境构建”。
+
+只清理 LLVM 相关源码缓存和共享构建产物：
+
+```bash
+CLEAN_MODULES=llvm CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+```
+
+只执行全量清理：
+
+```bash
+CLEAN_ALL=1 CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+```
+
+`CLEAN_ONLY=1` 必须与 `CLEAN_MODULES` 或 `CLEAN_ALL=1` 一起使用，否则脚本会报错。
+
+如果已经执行：
+
+```bash
+CLEAN_MODULES=llvm CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+```
+
+并看到以下信息：
+
+```text
+Cleanup completed; CLEAN_ONLY=1, so no build was started.
+```
+
+说明清理已经成功，只是构建按要求没有启动。随后直接运行：
+
+```bash
+./scripts/resolute-local-build.sh
+```
+
+即可在现有清理结果上开始构建，不需要再次设置 `CLEAN_MODULES=llvm`。
+
+
+## 9. 常用构建示例
+
+### 9.1 默认 arm64 完整包
+
+```bash
+./scripts/resolute-local-build.sh
+```
+
+### 9.2 arm64 精简包
+
+```bash
+./scripts/resolute-local-build.sh bpftools-min
+```
+
+### 9.3 x86_64、API 35、16 线程
+
+```bash
+NDK_ARCH=x86_64 NDK_API=35 THREADS=16 \
+    ./scripts/resolute-local-build.sh
+```
+
+### 9.4 armv7、API 28
+
+```bash
+NDK_ARCH=armv7 NDK_API=28 ./scripts/resolute-local-build.sh
+```
+
+### 9.5 Debug 构建
+
+```bash
+BUILD_TYPE=Debug ./scripts/resolute-local-build.sh
+```
+
+### 9.6 使用指定 NDK
+
+```bash
+NDK_PATH=/mnt/develop/android-ndk-r27d \
+    ./scripts/resolute-local-build.sh
+```
+
+### 9.7 禁止自动下载 NDK
+
+```bash
+DOWNLOAD_NDK=0 ./scripts/resolute-local-build.sh
+```
+
+### 9.8 切换 LLVM tag 后重新获取 LLVM 并构建
+
+先确认 `projects/llvm/build.mk` 中的 `LLVM_BRANCH_OR_TAG` 已更新，然后运行：
+
+```bash
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+```
+
+### 9.9 全量重新构建但保留所有第三方源码
+
+项目原有 Makefile 提供 `clean` 目标，只删除 `build/` 和 `out/`：
+
+```bash
+./scripts/resolute-local-build.sh clean
+./scripts/resolute-local-build.sh
+```
+
+该方式不会删除源码缓存；与 `CLEAN_MODULES` 不同，它也不会主动删除已有
+`bpftools-*.tar.gz`。需要严格清理打包产物时，使用 `CLEAN_MODULES` 或 `CLEAN_ALL`。
+
+
+## 10. 参数组合规则
+
+以下组合有效：
+
+```bash
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+CLEAN_MODULES=llvm,bcc CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+CLEAN_ALL=1 ./scripts/resolute-local-build.sh
+CLEAN_ALL=1 CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+```
+
+以下组合无效：
+
+```bash
+CLEAN_ALL=1 CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+THREADS=0 ./scripts/resolute-local-build.sh
+NDK_API=abc ./scripts/resolute-local-build.sh
+STATIC_LINKING=1 ./scripts/resolute-local-build.sh
+```
+
+其中 `STATIC_LINKING` 和 `LLVM_BPF_ONLY` 使用 `true/false`；`CLEAN_ALL`、
+`CLEAN_ONLY`、`DOWNLOAD_NDK` 和 `ALLOW_UNSUPPORTED_HOST` 使用 `0/1`。
+
+
+## 11. 常见错误与处理
+
+### 11.1 主机版本不匹配
+
+错误类似：
+
+```text
+error: this script supports Ubuntu 26.04 (Resolute)
+```
+
+首先确认 `/etc/os-release`。如果明确要在未验证系统上尝试，可以设置：
+
+```bash
+ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
+```
+
+### 11.2 缺少构建命令
+
+错误类似：
+
+```text
+error: missing build commands: ...
+```
+
+运行：
+
+```bash
+./scripts/resolute-install-deps.sh
+```
+
+然后重新构建。
+
+### 11.3 NDK 中缺少对应编译器
+
+错误类似：
+
+```text
+error: selected NDK does not contain the expected compiler: ...
+```
+
+检查：
+
+- `NDK_PATH` 是否指向 NDK 根目录；
+- `NDK_VERSION` 是否与目录一致；
+- `NDK_ARCH` 是否正确；
+- `NDK_API` 是否为 NDK 支持的 API；
+- NDK 是否完整解压。
+
+### 11.4 临时 NDK 目录存在但不完整
+
+错误类似：
+
+```text
+error: temporary NDK path exists but is incomplete
+```
+
+脚本不会自动覆盖已有目录。先检查该目录，确认其中没有需要保留的内容，再手动修复或
+移走，然后重新运行脚本。
+
+### 11.5 修改源码版本后仍使用旧源码
+
+修改 `projects/<module>/build.mk` 中的 tag 并不会自动替换已经存在的
+`projects/<module>/sources`。
+
+例如修改 LLVM tag 后，应执行：
+
+```bash
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+```
+
+### 11.6 增量构建状态异常
+
+如果构建参数、工具链或源码发生较大变化，旧 CMake/Autotools 缓存可能不再适用。
+
+保留源码、重建全部输出：
+
+```bash
+./scripts/resolute-local-build.sh clean
+./scripts/resolute-local-build.sh
+```
+
+重新获取指定源码并重建：
+
+```bash
+CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+```
+
+全部重新获取并重建：
+
+```bash
+CLEAN_ALL=1 ./scripts/resolute-local-build.sh
+```
+
+### 11.7 Flex 的 `malloc` 在 GCC 15 上编译失败
+
+Ubuntu 26.04 的 GCC 15 默认使用 GNU C23。旧 Flex 源码中的无参数原型
+`void *malloc()` 在 C23 中表示函数不接受参数，因此调用 `malloc(n)` 时会出现：
+
+```text
+error: too many arguments to function 'malloc'; expected 0, have 1
+```
+
+仓库已将 Flex 固定到 2026 年 7 月 30 日的上游 master 提交
+`4fcc71489ae298c35b0b786114ad524945f2cf95`，其中已经包含 C23 `malloc` 原型修复。如果
+错误发生前已经下载了旧 Flex 源码，只修改 `projects/flex/build.mk` 不会自动替换现有的
+`projects/flex/sources`，需要执行：
+
+```bash
+CLEAN_MODULES=flex CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+./scripts/resolute-local-build.sh
+```
+
+第一条命令会清理共享的 `build/`、`out/`、打包产物和旧 Flex 源码；第二条命令才会获取
+新提交并重新开始构建。不要在第二条命令中继续设置 `CLEAN_ONLY=1`。
+
+这个新 Flex 提交还会在非交叉编译的主机构建中执行二阶段 bootstrap 一致性检查。该检查
+在高并发 `make install` 时可能让两个规则同时生成 `stage1scan.o`，表现为：
+
+```text
+mv: cannot stat '.deps/stage1scan.Tpo': No such file or directory
+Bootstrap comparison failure!
+```
+
+项目生成的 host Flex 只是后续交叉构建工具，并不需要验证 Flex 上游源码能否自举。因此
+host Flex 配置固定使用上游支持的 `--disable-bootstrap`，消除这项并行竞态；Android Flex
+交叉构建仍保留原有配置。
+
+
+## 12. 构建前后的建议检查
+
+查看脚本实际默认值和帮助：
+
+```bash
+./scripts/resolute-local-build.sh --help
+```
+
+确认 NDK：
+
+```bash
+test -x /mnt/develop/android-ndk-r27d/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
+```
+
+构建后检查产物：
+
+```bash
+ls -lh bpftools-*.tar.gz
+```
+
+确认生成文件没有意外进入 Git 状态：
+
+```bash
+git status --short
+```
+
+需要注意：脚本自身、本文档以及项目构建配置的有意修改仍会正常显示在 Git 状态中；
+`.gitignore` 只负责忽略下载源码、构建目录、输出目录和打包产物。
+
+
+## 13. GitHub Actions 构建环境
+
+Android 工具包自动构建由 `.github/workflows/bpftools.yml` 负责。该 workflow 与本文档
+描述的本地构建环境保持一致：
+
+- GitHub runner：`ubuntu-26.04`；
+- Android API：35；
+- Android NDK：r27d；
+- 构建入口：`scripts/resolute-local-build.sh`；
+- 依赖安装入口：`scripts/resolute-install-deps.sh`；
+- 架构矩阵：arm64 和 x86_64；
+- 并行线程数：不在 workflow 中写死，由脚本使用 `nproc` 自动匹配 runner CPU 数量。
+
+当前配置面向 GitHub 免费标准 runner，不使用需要额外付费的 larger runner。公开仓库的
+标准 Linux runner 当前提供 4 个 CPU，标准 runner 用量免费且不限分钟数，因此 `nproc`
+会自动使用 4 个构建线程。私有仓库的标准 Linux runner 当前提供 2 个 CPU，并消耗账户的
+免费分钟额度。最终以 job 中实际的 `nproc` 结果为准；把 `THREADS` 人为设置为大于
+runner CPU 数量不会增加可用 CPU，也通常不能缩短 LLVM 构建时间。
+
+截至 2026 年 9 月，GitHub 官方仍将 `ubuntu-26.04` 标记为 Public Preview，而不是 GA
+镜像；预览期可能出现镜像变化、暂时不稳定或排队问题。该状态不影响本地 Resolute 构建，
+CI 失败时应先区分 runner 基础设施问题和项目编译问题。
+
+每个 GitHub Actions job 都是独立环境。workflow 将 `NDK_TMP_DIR` 设置为
+`${{ runner.temp }}`，由 `resolute-local-build.sh` 在该目录中选择 NDK。NDK r27d 目录通过
+`actions/cache` 缓存：首次缓存未命中时会下载，后续构建可以直接恢复，避免每个 workflow
+run 重复下载。LLVM 和完整构建目录不进入缓存，以避免大体积缓存占用免费存储额度，并
+避免不同构建参数之间复用不兼容的 CMake 状态。
+
+三个 Android 构建类型分别为：
+
+```text
+bpftools
+bpftools-min
+bpftrace（STATIC_LINKING=true、LLVM_BPF_ONLY=true）
+```
+
+这些构建继续为 arm64 和 x86_64 分别上传对应产物。
+
+为了减少免费 Actions 用量，同一架构的 `bpftools` 和 `bpftools-min` 在同一个 job 中
+连续作为两个 Make 目标构建：
+
+```bash
+./scripts/resolute-local-build.sh bpftools bpftools-min
+```
+
+精简包会复用完整包已经完成的 LLVM、BCC 和其他依赖构建，不再为同一架构从头执行一次
+相同的动态构建。因此整个矩阵由原来的 6 个标准 runner job 减少为 4 个：2 个架构的
+完整包/精简包组合 job，加上 2 个架构的静态 bpftrace job。三个产物仍分别上传，上传
+保留期设置为 7 天以降低长期存储占用。
+
+workflow 还包含两项免费额度保护：
+
+- 同一分支或 Pull Request 有新提交时，自动取消仍在运行的旧构建；
+- 只有构建相关的 Makefile、项目、工具链、sysroot、Resolute 脚本或 workflow 本身发生
+  变化时才触发，纯 README/文档修改不会启动耗时的 Android 全量构建。
+
+`black.yml` 和 `jdwp.yml` 不参与 Android LLVM/bpftrace 构建，因此可以独立选择 runner
+版本；它们不影响 `bpftools.yml` 的 Ubuntu 26.04、API 35 构建结果。

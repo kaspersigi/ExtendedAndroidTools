@@ -20,13 +20,7 @@ ubuntu-bionic-18.04-cloudimg-console.log
 # pyre
 .pyre/
 
-bpftools-arm64.tar.gz
-bpftools-min-arm64.tar.gz
-bpftools-x86_64.tar.gz
-bpftools-min-x86_64.tar.gz
-bpftools-armv7.tar.gz
-bpftools-min-armv7.tar.gz
-bpftools-86.tar.gz
-bpftools-min-x86.tar.gz
+# packaged sysroots
+/bpftools-*.tar.gz
 
 .flake8
