@@ -14,7 +14,7 @@ Extended Android Tools is a set of makefiles and build environment cross compili
 
 # Build environment
 ## Docker (recommended)
-Provided [Dockerfile](https://github.com/facebookexperimental/ExtendedAndroidTools/blob/main/docker/Dockerfile) defines the reference build environment. You can access it using the following commands:
+The provided [Dockerfile](docker/Dockerfile) defines the Ubuntu 26.04 reference build environment and installs Android NDK r27d. You can access it using the following commands:
 ```
 # Build the Docker image
 ./scripts/build-docker-image.sh
@@ -32,35 +32,30 @@ Provided [Dockerfile](https://github.com/facebookexperimental/ExtendedAndroidToo
 > python3
 ```
 
-## Vagrant
-ExtendedAndroidTools also provides a [Vagrantfile](https://github.com/facebookexperimental/ExtendedAndroidTools/blob/main/Vagrantfile):
-```
-# Startup (potentially provision new) VM
-vagrant up
-
-# ssh into a running VM
-vagrant ssh
-
-# Go to the shared directory
-> cd /vagrant
-
-# build the project of your choise
-> make python
-> make bpftools
-```
-
-## Setting up enviornment on your own
-ExtendedAndroidTools depends on Android NDK and few programs and libraries that are listed in [this script](https://github.com/facebookexperimental/ExtendedAndroidTools/blob/main/scripts/jammy-install-deps.sh). You should be be able to install them with a package manager of your choice. NDK can be downloaded using [this script](https://github.com/facebookexperimental/ExtendedAndroidTools/blob/main/scripts/download-ndk.sh).
+`run-docker-build-env.sh` defaults to Android API 35 and the number of logical CPUs reported by `nproc`. Both values can be overridden when starting the container:
 
 ```
-make python NDK_PATH=<path-to-ndk>
-make bpftools NDK_PATH=<path-to-ndk>
+THREADS=8 NDK_API=35 ./scripts/run-docker-build-env.sh
+```
+
+The image name can be overridden for both scripts with `IMAGE_NAME`; the default is `extended-android-tools`. `NDK_VERSION` defaults to `r27d` and must be set to the same value when building and running a customized image. The image platform defaults to `linux/amd64` because the project uses the NDK `linux-x86_64` host toolchain; override it with `DOCKER_PLATFORM` only when a compatible toolchain is provided.
+
+## Setting up an Ubuntu 26.04 environment directly
+For builds outside Docker, use the dedicated Ubuntu 26.04 scripts. The dependency script installs the required host packages; the build script selects an existing NDK r27d or downloads it to temporary storage.
+
+```
+./scripts/resolute-install-deps.sh
+./scripts/resolute-local-build.sh python
+./scripts/resolute-local-build.sh bpftools
 
 # Build and run host tools
-> make python-host
-> eval `make setup-env`
-> python3
+./scripts/resolute-local-build.sh python-host
+eval `make setup-env`
+python3
 ```
+
+See [scripts/resolute.README](scripts/resolute.README) for configuration, cleanup, NDK selection, and troubleshooting details.
+
 # Sysroots
 When projects are built the resulting binaries/libraries are placed in `bin` and `lib` subdirectories of `out/android/$ARCH/` directory. To run a particular tool on an Android device it needs to be pushed together with all the libraries it depends on to the device. In addition the shell environment needs to be configured appropriately for the runtime loader to be able to locate and load those libraries when the tool is executed. To help automate these steps ExtendedAndroidTools provides helper targets preparing sysroot archives consisting of selected executables and libraries, together with scripts setting up the environment. Those archives can be pushed to a device, extracted, and used without any further setup.
 
@@ -80,7 +75,8 @@ adb shell /data/local/tmp/bpftools/bpftrace -e 'uprobe:/system/lib64/libc.so:mal
 Some of the tools require root privileges to run. In addition BPF tools require Linux kernel to provide BPF capabilities: BPF, Kprobes and Uprobes. Most of Android kernels are based on Linux versions that are either too old, or have some or all of the necessary features disabled. The most straigtforward way to access Android environment providing root access and some BPF capabilities (BPF + Uprobes) is to use API 30 Android emulator **without** Google Play Store. To read more on preparing other devices see [dedicated documentation](docs/phone_setup.md).
 
 # Variables impacting build process
-- `THREADS` - number of jobs to run simultaneously. This value is passed to nested make invocations via `-j` option. The default value is 4.
+- `THREADS` - number of jobs to run simultaneously. This value is passed to nested make invocations via `-j` option. The Docker and Resolute entry scripts default to `nproc`; invoking Make directly without either wrapper retains the Makefile default of 4.
+- `NDK_API` - Android API level used by the NDK toolchain. The Docker and Resolute entry scripts default to API 35.
 - `NDK_ARCH` - x86_64 or arm64. Architecture to cross compile for. The default value is arm64
 - `BUILD_TYPE` - Release or Debug, controlls amount of debug info to be included in resulting libs and binaries. The default value is Release.
 

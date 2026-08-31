@@ -5,13 +5,12 @@ on: [push, pull_request]
 jobs:
   lint_codebase:
     name: Lint and format codebase
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v4
-      - uses: psf/black@stable
+      - uses: psf/black@25.12.0
         with:
+          version: "25.12.0"
           options: "--check --verbose"
           src: "./projects/jdwp"
-
-

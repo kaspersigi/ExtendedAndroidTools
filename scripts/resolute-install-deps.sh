@@ -62,6 +62,7 @@ packages=(
     gettext
     git
     help2man
+    libltdl-dev
     libssl-dev
     libtool
     make
