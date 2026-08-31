@@ -12,6 +12,8 @@ jobs:
       uses: actions/checkout@v4
       with:
          submodules: recursive
+    - name: Install Ubuntu 26.04 build dependencies
+      run: ./scripts/resolute-install-deps.sh
     - name: Initialize JDWP Project Dependencies
       run: make buck2-host python-host pyre-host
     - name: Build and run
