@@ -3,6 +3,14 @@
 #ifndef ARGP_WRAPPER_H
 #define ARGP_WRAPPER_H
 
+// Current gnulib headers require the including project to include gnulib's
+// private config.h first.  Consumers of this standalone argp package have
+// their own config.h, so mark the compatibility definitions below as the
+// equivalent public-header setup instead.
+#ifndef _GL_CONFIG_H_INCLUDED
+#  define _GL_CONFIG_H_INCLUDED 1
+#endif
+
 #ifndef ARGP_EI
 #  define ARGP_EI inline
 #endif

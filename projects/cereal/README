@@ -5,4 +5,4 @@ github: https://github.com/USCiLab/cereal
 license: BSD 3-clause
 license url: https://github.com/USCiLab/cereal/blob/master/LICENSE
 
-Default version: v1.3.2
+The selected release is defined in `projects/versions.mk`.

@@ -1,2 +1,4 @@
 pyre-check
 Home page: https://pyre-check.org/
+
+The selected release is defined in `projects/versions.mk`.

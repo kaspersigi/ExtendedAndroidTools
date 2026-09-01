@@ -17,7 +17,6 @@ $(CEREAL_ANDROID_BUILD_DIR):
 		-DBUILD_SANDBOX=OFF \
 		-DSKIP_PERFORMANCE_COMPARISON=ON
 
-CEREAL_TAG = v1.3.2
 CEREAL_REPO = https://github.com/USCiLab/cereal
 projects/cereal/sources:
-	git clone $(CEREAL_REPO) -b $(CEREAL_TAG) $@
+	git clone $(CEREAL_REPO) --depth=1 -b $(CEREAL_TAG) $@

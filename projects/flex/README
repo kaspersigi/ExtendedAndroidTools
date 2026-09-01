@@ -5,7 +5,7 @@ github: https://github.com/westes/flex
 license: modified BSD
 license url: https://github.com/westes/flex/blob/master/COPYING
 
-Default version: 98018e3f58d79e082216d406866942841d4bdf8a
+The selected upstream commit is defined in `projects/versions.mk`.
 
 Building
 flex is packaged with autoconf and builds without major problems. The only catch

@@ -3,9 +3,9 @@
 $(eval $(call project-define,obstack))
 
 $(OBSTACK_ANDROID):
-	cd $(OBSTACK_ANDROID_BUILD_DIR) && make -j $(THREADS)
+	$(MAKE) -C $(OBSTACK_ANDROID_BUILD_DIR)/gllib -j $(THREADS) all
 	cp $(OBSTACK_ANDROID_BUILD_DIR)/gllib/libobstack.a $(ANDROID_OUT_DIR)/lib/.
-	cp $(OBSTACK_SRCS)/gllib/obstack.h $(ANDROID_OUT_DIR)/include/obstack.h
+	cp $(OBSTACK_ANDROID_BUILD_DIR)/gllib/obstack.h $(ANDROID_OUT_DIR)/include/obstack.h
 	$(call fetch-license,obstack,LGPL)
 	touch $@
 
@@ -15,4 +15,4 @@ $(OBSTACK_ANDROID_BUILD_DIR): $(ANDROID_CONFIG_SITE)
 
 projects/obstack/sources: $(call project-optional-sources-target,gnulib)
 	cd $(call project-sources,gnulib) && ./gnulib-tool --create-testdir \
-		--lgpl --lib="libobstack" --dir=$(abspath $@) obstack
+		--without-tests --lgpl --lib="libobstack" --dir=$(abspath $@) obstack

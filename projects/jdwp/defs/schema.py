@@ -10,7 +10,6 @@ from enum import Enum
 from collections.abc import Set, Sequence
 from projects.jdwp.defs.constants import ErrorType
 
-
 Type = Union[
     "Array",
     "ArrayLength",

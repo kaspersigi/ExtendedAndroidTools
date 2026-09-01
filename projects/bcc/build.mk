@@ -17,7 +17,7 @@ endif
 	touch $@
 
 # generates bcc build files for Android
-$(BCC_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/flex
+$(BCC_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/flex $(PYTHON_XINSTALL)
 	-mkdir $@
 	cd $@ && CFLAGS="$(BCC_EXTRA_CFLAGS)" CXXFLAGS="$(BCC_EXTRA_CFLAGS)" LDFLAGS="$(BCC_EXTRA_LDFLAGS)" \
 		$(CMAKE) $(BCC_SRCS) \
@@ -26,10 +26,8 @@ $(BCC_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/flex
 		-DBPS_LINK_RT=OFF \
 		-DENABLE_TESTS=OFF \
 		-DCMAKE_USE_LIBBPF_PACKAGE=ON \
-		-DPYTHON_CMD=$(abspath $(HOST_OUT_DIR)/bin/python.xinstall)
+		-DPYTHON_CMD=$(PYTHON_XINSTALL)
 
-BCC_COMMIT = v0.36.1
 BCC_REPO = https://github.com/iovisor/bcc
 projects/bcc/sources:
-	git clone $(BCC_REPO) $@
-	cd $@ && git checkout $(BCC_COMMIT)
+	git clone $(BCC_REPO) $@ --depth=1 -b $(BCC_COMMIT)

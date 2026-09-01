@@ -209,6 +209,8 @@ define pip-project =
   $(call project-host-target,$(1)): \
       $(call project-host-target,python) \
       | $(HOST_BUILD_DIR)
-	python3 -m pip install $(if $(2),$(2),$(1))
+	PYTHONNOUSERSITE=1 $(PYTHON_HOST_EXECUTABLE) -s -m pip install \
+	    --disable-pip-version-check \
+	    $(if $(2),$(2),$(1))
 	touch $$@
 endef

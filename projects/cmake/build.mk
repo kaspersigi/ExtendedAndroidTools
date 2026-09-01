@@ -8,12 +8,13 @@ $(CMAKE_HOST):
 
 $(CMAKE_HOST_BUILD_DIR):
 	-mkdir $@
-	cd $@ && $(CMAKE_SRCS)/bootstrap --prefix=$(abspath $(HOST_OUT_DIR))
+	cd $@ && $(CMAKE_SRCS)/bootstrap \
+		--parallel=$(THREADS) \
+		--prefix=$(abspath $(HOST_OUT_DIR))
 
-CMAKE_VERSION = 3.31.11
 CMAKE_URL = https://github.com/Kitware/CMake/releases/download/v$(CMAKE_VERSION)/cmake-$(CMAKE_VERSION).tar.gz
 $(DOWNLOADS_DIR)/cmake-$(CMAKE_VERSION).tar.gz: | $(DOWNLOADS_DIR)
-	cd $(DOWNLOADS_DIR) && curl -L -O $(CMAKE_URL)
+	curl --fail --location --retry 3 --output $@ $(CMAKE_URL)
 
 projects/cmake/sources: $(DOWNLOADS_DIR)/cmake-$(CMAKE_VERSION).tar.gz
 	-mkdir $@

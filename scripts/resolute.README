@@ -110,6 +110,7 @@ gettext
 git
 help2man
 libssl-dev
+libltdl-dev
 libtool
 make
 patch
@@ -523,7 +524,7 @@ ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
 
 - `bpftrace`；
 - 可用时包含 `bpftrace-aotrt`；
-- Python 3.10 可执行程序和运行库；
+- `projects/versions.mk` 当前选择的 Python 可执行程序和运行库；
 - BCC 与 BPF 相关动态库；
 - `libclang.so`；
 - `libbpf`、`libelf`、`liblzma`、`libffi` 等运行库；
@@ -570,6 +571,52 @@ bpftools-min-armv7.tar.gz
 ```
 
 单独构建模块主要用于开发和定位编译问题，不一定生成最终的 `bpftools-*.tar.gz`。
+
+### 7.4 统一版本管理与逐模块升级
+
+所有可下载组件和主机 Python 包的版本都集中在：
+
+```text
+projects/versions.mk
+```
+
+Python 只需要在清单中设置一次完整版本：
+
+```make
+PYTHON_VERSION := <major.minor.patch>
+```
+
+`PYTHON_ABI_VERSION`、`PYTHON_BINARY`、源码 tag、主机解释器路径、Android
+`site-packages` 路径和按架构隔离的 `python.xinstall` 都由该值推导。不要再在模块、sysroot
+或 workflow 中加入 `python3.<minor>` 路径。普通的 `python3` 仍可作为主机依赖命令或最终包
+内的兼容入口，它不代表固定某个 Python 次版本。
+
+建议一次只升级一个模块，便于把失败归因到明确的上游变化：
+
+```bash
+# 1. 修改 projects/versions.mk 中一个模块的版本
+# 2. 删除该模块旧源码，并清除所有共享构建/安装输出
+CLEAN_MODULES=python CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
+
+# 3. 先验证模块本身
+./scripts/resolute-local-build.sh python
+
+# 4. 再验证最终依赖链和两个包
+./scripts/resolute-local-build.sh bpftools bpftools-min
+```
+
+将 `python` 替换为 `ffi`、`xz`、`elfutils`、`bcc` 或其他项目名即可。模块使用 Git
+提交而不是 release tag 时，也只在 `projects/versions.mk` 更新提交哈希。LLVM 同样在该文件
+声明，但当前项目明确固定为 `llvmorg-21.1.8`。
+
+不同 `NDK_ARCH` 的 `python.xinstall` 分别生成在：
+
+```text
+build/android/<NDK_ARCH>/python.xinstall
+```
+
+因此依次构建 arm64 和 x86_64 时，不会让后一个架构的 BCC Python 安装误用前一个架构的
+`site-packages` 路径。
 
 
 ## 8. 清理功能
@@ -646,7 +693,7 @@ CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
 ```
 
 这会删除旧的 `projects/llvm/sources` 和全部构建输出，然后根据
-`projects/llvm/build.mk` 当前设置的 tag 重新下载 LLVM 并开始构建。
+`projects/versions.mk` 当前设置的 tag 重新下载 LLVM 并开始构建。
 
 ### 8.2 CLEAN_ALL
 
@@ -763,7 +810,7 @@ DOWNLOAD_NDK=0 ./scripts/resolute-local-build.sh
 
 ### 9.8 切换 LLVM tag 后重新获取 LLVM 并构建
 
-先确认 `projects/llvm/build.mk` 中的 `LLVM_BRANCH_OR_TAG` 已更新，然后运行：
+先确认 `projects/versions.mk` 中的 `LLVM_BRANCH_OR_TAG` 已更新，然后运行：
 
 ```bash
 CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
@@ -868,7 +915,7 @@ error: temporary NDK path exists but is incomplete
 
 ### 11.5 修改源码版本后仍使用旧源码
 
-修改 `projects/<module>/build.mk` 中的 tag 并不会自动替换已经存在的
+修改 `projects/versions.mk` 中的 tag、版本号或提交哈希，并不会自动替换已经存在的
 `projects/<module>/sources`。
 
 例如修改 LLVM tag 后，应执行：
@@ -911,7 +958,7 @@ error: too many arguments to function 'malloc'; expected 0, have 1
 
 仓库已将 Flex 固定到 2026 年 7 月 30 日的上游 master 提交
 `4fcc71489ae298c35b0b786114ad524945f2cf95`，其中已经包含 C23 `malloc` 原型修复。如果
-错误发生前已经下载了旧 Flex 源码，只修改 `projects/flex/build.mk` 不会自动替换现有的
+错误发生前已经下载了旧 Flex 源码，只修改 `projects/versions.mk` 不会自动替换现有的
 `projects/flex/sources`，需要执行：
 
 ```bash
@@ -977,6 +1024,9 @@ Android 工具包自动构建由 `.github/workflows/bpftools.yml` 负责。该 w
 - 依赖安装入口：`scripts/resolute-install-deps.sh`；
 - 架构矩阵：arm64 和 x86_64；
 - 并行线程数：不在 workflow 中写死，由脚本使用 `nproc` 自动匹配 runner CPU 数量。
+
+workflow 保留六个独立上传产物：arm64/x86_64 各自的完整包、精简包和静态
+`bpftrace`，没有通过减少目标或架构来换取构建速度。
 
 当前配置面向 GitHub 免费标准 runner，不使用需要额外付费的 larger runner。公开仓库的
 标准 Linux runner 当前提供 4 个 CPU，标准 runner 用量免费且不限分钟数，因此 `nproc`

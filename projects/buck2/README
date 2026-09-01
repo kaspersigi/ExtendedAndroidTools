@@ -3,4 +3,4 @@ buck2
 github: https://github.com/facebook/buck2
 license url: https://github.com/facebook/buck2/blob/main/LICENSE-MIT
 
-Default version: v2023-09-01
+The selected release is defined in `projects/versions.mk`.

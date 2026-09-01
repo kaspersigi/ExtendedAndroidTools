@@ -4,12 +4,11 @@ Home page: https://www.python.org/
 license: PSFv2
 license url: https://github.com/python/cpython/blob/main/LICENSE
 
-Default version: v3.10.6
-https://github.com/python/cpython/tree/v3.10.6
+The selected CPython release and its derived ABI version are defined once in
+projects/versions.mk.
 
 Building:
-- configure scripts needs to be told explicitely what the build environment is
-  (--build=x86_64)
-- due to lack of libs we need to disable ipv6 (--disable-ipv6)
+- configure scripts need explicit build and target environments
+  (--build, --host, and --with-build-python)
 - PKG_CONFIG_LIBDIR needs to be exported so that it is visible in processes
   spawned by the configure script

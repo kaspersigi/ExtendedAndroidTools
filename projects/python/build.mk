@@ -4,7 +4,9 @@ PYTHON_ANDROID_DEPS = ffi
 PYTHON_HOST_DEPS = ffi
 $(eval $(call project-define,python))
 
-PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS = --build=x86_64 --disable-ipv6 --without-ensurepip --with-system-ffi
+PYTHON_BUILD_TRIPLE := x86_64-pc-linux-gnu
+PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS = --build=$(PYTHON_BUILD_TRIPLE) --without-ensurepip
+PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --with-build-python=$(PYTHON_HOST_EXECUTABLE)
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += "EXTRA_CPPFLAGS=-I$(ANDROID_SYSROOT_INCLUDE_PATH)"
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += "EXTRA_LDFLAGS=-L$(ANDROID_SYSROOT_LIB_PATH)"
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += ac_cv_file__dev_ptmx=no
@@ -15,15 +17,20 @@ $(PYTHON_ANDROID):
 	cp $(PYTHON_SRCS)/LICENSE $(ANDROID_OUT_DIR)/licenses/python
 	touch $@
 
-$(PYTHON_HOST): $(HOST_OUT_DIR)/bin/python.xinstall
+$(PYTHON_HOST):
 	cd $(PYTHON_HOST_BUILD_DIR) && make install -j $(THREADS)
+	PYTHONNOUSERSITE=1 $(PYTHON_HOST_EXECUTABLE) -s -m pip install \
+		--disable-pip-version-check \
+		setuptools==$(SETUPTOOLS_VERSION)
 	touch $@
 
-$(HOST_OUT_DIR)/bin/python.xinstall: projects/python/python.xinstall.template
-$(HOST_OUT_DIR)/bin/python.xinstall: | $(HOST_OUT_DIR)
+$(PYTHON_XINSTALL): projects/python/python.xinstall.template
+$(PYTHON_XINSTALL): | $(ANDROID_BUILD_DIR)
 	cp $^ $@
 	sed -ibkp -e "s+<HOST_OUT_DIR>+$(abspath $(HOST_OUT_DIR))+g" $@
 	sed -ibkp -e "s+<ANDROID_OUT_DIR>+$(abspath $(ANDROID_OUT_DIR))+g" $@
+	sed -ibkp -e "s+<PYTHON_BINARY>+$(PYTHON_BINARY)+g" $@
+	sed -ibkp -e "s+<PYTHON_ABI_VERSION>+$(PYTHON_ABI_VERSION)+g" $@
 	chmod +x $@
 
 $(PYTHON_ANDROID_BUILD_DIR): \
@@ -40,10 +47,8 @@ $(PYTHON_HOST_BUILD_DIR): \
 $(PYTHON_HOST_BUILD_DIR): $(HOST_CONFIG_SITE)
 	mkdir -p $@
 	cd $@ && $(PYTHON_SRCS)/configure \
-		$(HOST_EXTRA_CONFIGURE_FLAGS) \
-		--with-system-ffi
+		$(HOST_EXTRA_CONFIGURE_FLAGS)
 
-PYTHON_BRANCH_OR_TAG = v3.10.21
 PYTHON_REPO = https://github.com/python/cpython.git
 projects/python/sources:
 	git clone $(PYTHON_REPO) $@ --depth=1 -b $(PYTHON_BRANCH_OR_TAG)

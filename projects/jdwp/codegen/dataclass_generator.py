@@ -16,7 +16,6 @@ from projects.jdwp.defs.schema import (
     UnionTag,
 )
 
-
 StructLink = typing.Tuple[Struct, Field, Struct]
 
 

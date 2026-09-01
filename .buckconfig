@@ -18,3 +18,8 @@ ignore = .git
 
 [build]
 execution_platforms = prelude//platforms:default
+
+[buck2]
+# This repository is small, and the hash crawler avoids depending on host-wide
+# inotify limits in containers and GitHub-hosted runners.
+file_watcher = fs_hash_crawler

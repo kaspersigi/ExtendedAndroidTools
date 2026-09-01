@@ -15,7 +15,6 @@ from projects.jdwp.defs.schema import (
 )
 from projects.jdwp.defs.constants import ErrorType
 
-
 __AllClasses_reply_classes = Field(
     "classes",
     ArrayLength(IntegralType.INT),

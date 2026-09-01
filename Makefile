@@ -61,6 +61,7 @@ setup-env:
 .PHONY: clean fetch-sources remove-sources install uninstall setup-env
 .DELETE_ON_ERROR:
 
+include projects/versions.mk
 include projects/project.mk
 include projects/licenses.mk
 include projects/*/build.mk

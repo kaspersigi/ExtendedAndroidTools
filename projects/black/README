@@ -3,3 +3,5 @@ Black is the uncompromising Python code formatter.
 
 github: https://github.com/psf/black
 license url: https://github.com/psf/black#license
+
+The selected release is defined in `projects/versions.mk`.

@@ -10,7 +10,6 @@ from projects.jdwp.defs.schema import (
 )
 import typing
 
-
 __OPAQUE_TYPE_MAPPING = {
     OpaqueType.BOOLEAN: "bool",
     OpaqueType.LOCATION: "typing.Any",

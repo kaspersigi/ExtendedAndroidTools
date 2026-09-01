@@ -6,11 +6,18 @@ jdwp-host-prepare: \
   python-host \
   pyre-host
 
-jdwp-check: jdwp-host-prepare
-	buck2 run //projects/jdwp:main
-	buck2 test //projects/jdwp/...
-	pyre check
-	black projects/jdwp --check
+JDWP_BUCK2_HOME := $(abspath $(HOST_BUILD_DIR)/buck2-home)
+JDWP_BUCK2 := HOME=$(JDWP_BUCK2_HOME) $(abspath $(HOST_OUT_DIR)/bin/buck2)
+JDWP_PYTHON := HOME=$(JDWP_BUCK2_HOME) PYTHONNOUSERSITE=1 $(PYTHON_HOST_EXECUTABLE) -s
 
-jdwp-format: black-host
-	black projects/jdwp
+$(JDWP_BUCK2_HOME):
+	mkdir -p $@
+
+jdwp-check: jdwp-host-prepare | $(JDWP_BUCK2_HOME)
+	$(JDWP_BUCK2) run //projects/jdwp:main
+	$(JDWP_BUCK2) test //projects/jdwp/...
+	$(JDWP_PYTHON) $(abspath $(HOST_OUT_DIR)/bin/pyre) check
+	$(JDWP_PYTHON) -m black projects/jdwp --check
+
+jdwp-format: black-host | $(JDWP_BUCK2_HOME)
+	$(JDWP_PYTHON) -m black projects/jdwp

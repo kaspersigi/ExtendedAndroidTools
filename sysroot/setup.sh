@@ -29,8 +29,16 @@ export ARCH="<TARGET_ARCH_ENV_VAR>"
 # reported if libraries are loaded in different order.
 export BPFTRACE_CACHE_USER_SYMBOLS=0
 
-# tell python where to find bcc in case we built the package on ubuntu/debian
-export PYTHONPATH=$SYSROOT/lib/python3.10/site-packages/bcc-0.27.0-py3.10.egg:$PYTHONPATH
+# Tell Python where to find BCC without coupling this script to a specific
+# Python ABI, BCC version, or setuptools installation layout.
+for python_path in \
+    "$SYSROOT"/lib/python*/site-packages \
+    "$SYSROOT"/lib/python*/site-packages/*.egg; do
+    if [[ -e "$python_path" ]]; then
+        PYTHONPATH="$python_path${PYTHONPATH:+:$PYTHONPATH}"
+    fi
+done
+export PYTHONPATH
 
 export TMPDIR=/data/local/tmp
 

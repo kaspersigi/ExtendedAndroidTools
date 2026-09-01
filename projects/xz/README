@@ -2,9 +2,9 @@ XZ Utils
 XZ Utils is free general-purpose data compression software with a high compression ratio.
 
 license: public domain/LGPLv2.1
-license url: https://git.tukaani.org/?p=xz.git;a=blob;f=COPYING
+license url: https://github.com/tukaani-project/xz/blob/master/COPYING
 
-Default version: v5.2.5
+The selected release is defined in `projects/versions.mk`.
 
 Building
 - XZ Utils builds without problems, however autogen runs into problems specific

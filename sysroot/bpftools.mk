@@ -64,8 +64,8 @@ $(BPFTOOLS):
 	$(GEN_SETUP_SCRIPT)
 	$(call gen-wrapper,bpftrace)
 	$(call gen-wrapper,bpftrace-aotrt)
-	$(call gen-wrapper,python3.10)
-	cp $@/python3.10 $@/python3
+	$(call gen-wrapper,$(PYTHON_BINARY))
+	cp $@/$(PYTHON_BINARY) $@/python3
 	$(call gen-wrapper,xzcat)
 
 	cp -r $(ANDROID_OUT_DIR)/licenses $@/licenses

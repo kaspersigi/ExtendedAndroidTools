@@ -2,7 +2,6 @@
 
 """Command Set: ReferenceType."""
 
-
 from projects.jdwp.defs.schema import (
     Command,
     Field,
@@ -12,7 +11,6 @@ from projects.jdwp.defs.schema import (
     OpaqueType,
 )
 from projects.jdwp.defs.constants import ErrorType
-
 
 Signature = Command(
     name="Signature",

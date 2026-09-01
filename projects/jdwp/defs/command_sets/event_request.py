@@ -15,7 +15,6 @@ from projects.jdwp.defs.schema import (
 )
 from projects.jdwp.defs.constants import ErrorType, ModifierKind
 
-
 CountModifier = Struct(
     [Field("count", IntegralType.INT, "Count before event. One for one-off.")]
 )

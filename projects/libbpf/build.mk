@@ -5,7 +5,7 @@ $(eval $(call project-define,libbpf))
 
 LIBBPF_EXTRA_CFLAGS += "-D__user="
 LIBBPF_EXTRA_CFLAGS += "-D__force="
-# libbpf 1.7.0不再需要
+# Current libbpf releases no longer need this compatibility definition.
 # LIBBPF_EXTRA_CFLAGS += "-D__poll_t=unsigned"
 LIBBPF_EXTRA_CFLAGS += "-Wno-tautological-constant-out-of-range-compare"
 
@@ -27,7 +27,6 @@ $(LIBBPF_ANDROID): $(ANDROID_OUT_DIR)/lib/pkgconfig/zlib.pc
 $(LIBBPF_ANDROID_BUILD_DIR):
 	mkdir -p $@
 
-LIBBPF_TAG = v1.7.0
 LIBBPF_REPO = https://github.com/libbpf/libbpf
 projects/libbpf/sources:
-	git clone $(LIBBPF_REPO) $@ -b $(LIBBPF_TAG)
+	git clone $(LIBBPF_REPO) $@ --depth=1 -b $(LIBBPF_TAG)

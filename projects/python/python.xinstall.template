@@ -1,4 +1,4 @@
-#!<HOST_OUT_DIR>/bin/python3.10
+#!<HOST_OUT_DIR>/bin/<PYTHON_BINARY>
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
 import itertools
@@ -7,8 +7,8 @@ import sys
 import typing
 
 
-INTERPRETER = "<HOST_OUT_DIR>/bin/python3.10"
-PYTHONPATH = "<ANDROID_OUT_DIR>/lib/python3.10/site-packages/"
+INTERPRETER = "<HOST_OUT_DIR>/bin/<PYTHON_BINARY>"
+PYTHONPATH = "<ANDROID_OUT_DIR>/lib/python<PYTHON_ABI_VERSION>/site-packages/"
 INSTALL_LAYOUT = "--install-layout"
 
 
@@ -37,7 +37,13 @@ def main():
         case _:
             args = [INTERPRETER] + sys.argv[1:]
 
-    os.execve(INTERPRETER, args, {"PYTHONPATH": PYTHONPATH})
+    env = os.environ.copy()
+    env["PYTHONPATH"] = PYTHONPATH
+    # Cross-installation must never discover packages from the build user's
+    # ~/.local directory.  Keeping this here also makes local and CI builds
+    # behave identically.
+    env["PYTHONNOUSERSITE"] = "1"
+    os.execve(INTERPRETER, args, env)
 
 
 if __name__ == "__main__":

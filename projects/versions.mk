@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Central version manifest for fetched projects and host Python packages.
+# Keep release selection here so build rules and packaging logic do not need
+# to duplicate version or ABI strings.
+
+BCC_COMMIT := v0.37.0
+BLACK_VERSION := 26.5.1
+BPFTRACE_COMMIT := v0.26.1
+BUCK2_VERSION := 2026-08-22
+CEREAL_TAG := v1.3.2
+CMAKE_VERSION := 4.4.3
+ELFUTILS_VERSION := 0.195
+FFI_BRANCH_OR_TAG := v3.8.0
+FLEX_COMMIT_HASH := 4fcc71489ae298c35b0b786114ad524945f2cf95
+GNULIB_COMMIT_HASH := 10f61d9f9528fd26c0a5f120a4c852e781b1126c
+LIBBPF_TAG := v1.7.0
+LLVM_BRANCH_OR_TAG := llvmorg-21.1.8
+PYRE_VERSION := 0.10.0
+PYTHON_VERSION := 3.14.7
+SETUPTOOLS_VERSION := 84.0.0
+XZ_BRANCH_OR_TAG := v5.8.3
+
+PYTHON_VERSION_COMPONENTS := $(subst ., ,$(PYTHON_VERSION))
+PYTHON_ABI_VERSION := $(word 1,$(PYTHON_VERSION_COMPONENTS)).$(word 2,$(PYTHON_VERSION_COMPONENTS))
+PYTHON_BINARY := python$(PYTHON_ABI_VERSION)
+PYTHON_BRANCH_OR_TAG := v$(PYTHON_VERSION)
+PYTHON_HOST_EXECUTABLE := $(abspath $(HOST_OUT_DIR)/bin/$(PYTHON_BINARY))
+PYTHON_ANDROID_SITE_PACKAGES := $(abspath $(ANDROID_OUT_DIR)/lib/python$(PYTHON_ABI_VERSION)/site-packages)
+PYTHON_XINSTALL := $(abspath $(ANDROID_BUILD_DIR)/python.xinstall)

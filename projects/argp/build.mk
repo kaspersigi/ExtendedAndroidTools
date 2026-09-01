@@ -3,7 +3,7 @@
 $(eval $(call project-define,argp))
 
 $(ARGP_ANDROID):
-	cd $(ARGP_ANDROID_BUILD_DIR) && make -j $(THREADS)
+	$(MAKE) -C $(ARGP_ANDROID_BUILD_DIR)/gllib -j $(THREADS) all
 	cp $(ARGP_ANDROID_BUILD_DIR)/gllib/libargp.a $(ANDROID_OUT_DIR)/lib/.
 	cp projects/argp/headers/argp-wrapper.h $(ANDROID_OUT_DIR)/include/argp.h
 	cp $(ARGP_SRCS)/gllib/argp.h $(ANDROID_OUT_DIR)/include/argp-real.h
@@ -16,4 +16,4 @@ $(ARGP_ANDROID_BUILD_DIR): $(ANDROID_CONFIG_SITE)
 
 projects/argp/sources: $(call project-optional-sources-target,gnulib)
 	cd $(call project-sources,gnulib) && ./gnulib-tool --create-testdir \
-		--lgpl --lib="libargp" --dir=$(abspath $@) argp
+		--without-tests --lgpl --lib="libargp" --dir=$(abspath $@) argp

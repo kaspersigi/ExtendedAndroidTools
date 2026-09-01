@@ -1,7 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-BUCK2_VERSION := 2023-10-01
-
 ifeq ($(HOST_OS),GNU/Linux)
 BUCK2_ARCHIVE_SUFFIX := unknown-linux-gnu
 else
@@ -25,7 +23,7 @@ $(HOST_OUT_DIR)/bin/buck2: $(DOWNLOADS_DIR)/$(BUCK2_ARCHIVE) | $(HOST_OUT_DIR)
 
 $(DOWNLOADS_DIR)/$(BUCK2_ARCHIVE): | $(DOWNLOADS_DIR)
 # instructions to download the archive
-	curl -L -s -o $@ $(BUCK2_URL)
+	curl --fail --location --retry 3 --output $@ $(BUCK2_URL)
 
 # Phony target for host
 .PHONY: buck2-host

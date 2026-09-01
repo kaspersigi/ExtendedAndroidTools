@@ -9,6 +9,10 @@ ELFUTILS_EXTRA_CFLAGS += -Dprogram_invocation_short_name=\\\"no-program_invocati
 $(ELFUTILS_ANDROID):
 	cd $(ELFUTILS_ANDROID_BUILD_DIR)/lib && make -j $(THREADS)
 	cd $(ELFUTILS_ANDROID_BUILD_DIR)/libelf && make install -j $(THREADS)
+	# libelf.a absorbs every private libeu object.  Its crc32 implementation is
+	# unused by libelf itself and conflicts with zlib's crc32 in static links.
+	$(ANDROID_TOOLCHAIN_PATH)/llvm-ar d \
+		$(ANDROID_OUT_DIR)/lib/libelf.a crc32.o crc32_file.o
 	cd $(ELFUTILS_ANDROID_BUILD_DIR)/config && make
 	cp $(ELFUTILS_ANDROID_BUILD_DIR)/config/libelf.pc $(ANDROID_OUT_DIR)/lib/pkgconfig
 	cp $(ELFUTILS_SRCS)/COPYING-LGPLV3 $(ANDROID_OUT_DIR)/licenses/elfutils-libs
@@ -23,10 +27,10 @@ $(ANDROID_BUILD_DIR)/elfutils: $(ANDROID_OUT_DIR)/lib/pkgconfig/zlib.pc
 		--disable-libdebuginfod \
 		--enable-install-elfh
 
-ELFUTILS_VERSION = 0.191
-ELFUTILS_URL = http://sourceware.org/pub/elfutils/$(ELFUTILS_VERSION)/elfutils-$(ELFUTILS_VERSION).tar.bz2
+ELFUTILS_URL = https://sourceware.org/elfutils/ftp/$(ELFUTILS_VERSION)/elfutils-$(ELFUTILS_VERSION).tar.bz2
 projects/elfutils/sources: | $(DOWNLOADS_DIR)
-	curl -L $(ELFUTILS_URL) -o $(DOWNLOADS_DIR)/elfutils-$(ELFUTILS_VERSION).tar.bz2
+	curl --fail --location --retry 3 $(ELFUTILS_URL) \
+		--output $(DOWNLOADS_DIR)/elfutils-$(ELFUTILS_VERSION).tar.bz2
 	-mkdir $@
 	tar xf $(DOWNLOADS_DIR)/elfutils-$(ELFUTILS_VERSION).tar.bz2 -C $@ \
 		--transform="s|^elfutils-$(ELFUTILS_VERSION)||"

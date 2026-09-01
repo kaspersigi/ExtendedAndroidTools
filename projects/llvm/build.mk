@@ -19,7 +19,11 @@ else
 $(error unknown abi $(NDK_ARCH))
 endif
 
-LLVM_EXTRA_CMAKE_FLAGS = -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra"
+LLVM_EXTRA_CMAKE_FLAGS = -DLLVM_ENABLE_PROJECTS="clang"
+LLVM_EXTRA_CMAKE_FLAGS += -DLLVM_BUILD_TOOLS=OFF
+LLVM_EXTRA_CMAKE_FLAGS += -DCLANG_BUILD_TOOLS=OFF
+LLVM_EXTRA_CMAKE_FLAGS += -DLLVM_INCLUDE_BENCHMARKS=OFF
+LLVM_EXTRA_CMAKE_FLAGS += -DLLVM_INCLUDE_EXAMPLES=OFF
 LLVM_EXTRA_HOST_FLAGS = -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN=1
 
 ifeq ($(STATIC_LINKING),true)
@@ -58,10 +62,9 @@ $(LLVM_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/clang-tblgen
 		-DLLVM_INCLUDE_GO_TESTS=OFF \
 		-DLLVM_INCLUDE_TESTS=OFF \
 		-DLLVM_INCLUDE_UTILS=OFF \
-		-DCLANG_BUILD_TOOLS=ON \
 		-DLLVM_ENABLE_LIBXML2=OFF \
 		-DLLVM_TOOL_LLVM_RTDYLD_BUILD=OFF \
-		-DPython3_EXECUTABLE=$(abspath $(HOST_OUT_DIR)/bin/python3.10)
+		-DPython3_EXECUTABLE=$(PYTHON_HOST_EXECUTABLE)
 
 # rules building host llvm-tblgen and clang-tblgen binaries necessary to
 # cross compile llvm and clang for Android
@@ -80,7 +83,6 @@ $(LLVM_HOST_BUILD_DIR):
 		$(LLVM_EXTRA_HOST_FLAGS) \
 		-DCMAKE_BUILD_TYPE=Release
 
-LLVM_BRANCH_OR_TAG = llvmorg-21.1.8
 LLVM_REPO = https://github.com/llvm/llvm-project
 projects/llvm/sources:
 	git clone $(LLVM_REPO) $@ --depth=1 -b $(LLVM_BRANCH_OR_TAG)
