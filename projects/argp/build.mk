@@ -2,6 +2,7 @@
 
 $(eval $(call project-define,argp))
 
+$(ARGP_ANDROID): $(LGPL_FILE)
 $(ARGP_ANDROID):
 	$(MAKE) -C $(ARGP_ANDROID_BUILD_DIR)/gllib -j $(THREADS) all
 	cp $(ARGP_ANDROID_BUILD_DIR)/gllib/libargp.a $(ANDROID_OUT_DIR)/lib/.
@@ -11,9 +12,13 @@ $(ARGP_ANDROID):
 	touch $@
 
 $(ARGP_ANDROID_BUILD_DIR): $(ANDROID_CONFIG_SITE)
-	-mkdir $@
+	mkdir -p $@
 	cd $@ && $(ARGP_SRCS)/configure $(ANDROID_EXTRA_CONFIGURE_FLAGS)
 
 projects/argp/sources: $(call project-optional-sources-target,gnulib)
+	@$(call source-transaction-begin,$@); \
 	cd $(call project-sources,gnulib) && ./gnulib-tool --create-testdir \
-		--without-tests --lgpl --lib="libargp" --dir=$(abspath $@) argp
+		--without-tests --lgpl --lib="libargp" --dir=$(abspath $@) argp; \
+	$(source-transaction-commit)
+
+$(eval $(call project-source-signature,argp,gnulib:$(GNULIB_COMMIT_HASH):argp,projects/argp/build.mk))

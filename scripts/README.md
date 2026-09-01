@@ -1,16 +1,20 @@
 # ExtendedAndroidTools Ubuntu 26.04 (Resolute) 本地构建说明
 
-本文档介绍以下两个脚本：
+本文档介绍以下构建和验证脚本：
 
 - `scripts/resolute-install-deps.sh`
 - `scripts/resolute-local-build.sh`
+- `scripts/verify-artifacts.sh`
+- `scripts/generate-checksums.sh`
+- `scripts/android-smoke-test.sh`
 
 它们用于在 Ubuntu 26.04（代号 Resolute）x86_64 主机上直接构建
 ExtendedAndroidTools，不依赖 Docker 构建环境。
 
 `resolute-install-deps.sh` 负责安装主机依赖；
 `resolute-local-build.sh` 负责选择或下载 Android NDK、校验构建环境、清理可选缓存，
-以及调用项目 Makefile 完成本地交叉编译。
+以及调用项目 Makefile 完成本地交叉编译。默认的 `all` 构建还会验收六个产物、生成
+`out/SHA256SUMS`，并在 adb 能唯一确定一台可用设备时自动执行真机 smoke test。
 
 
 ## 1. 适用环境
@@ -21,7 +25,7 @@ ExtendedAndroidTools，不依赖 Docker 构建环境。
 - 主机架构：x86_64
 - Android NDK：r27d
 - Android API：35
-- Android 目标架构：arm64
+- 普通单目标构建架构：arm64（`all` 固定构建 arm64 和 x86_64）
 - 构建类型：Release
 - 并行线程数：主机 `nproc` 返回的逻辑 CPU 数
 
@@ -70,6 +74,7 @@ out/bpftrace-x86_64
 build/
 out/
 projects/*/sources/
+projects/*/.source-signature
 ```
 
 以下生成内容均由仓库 `.gitignore` 忽略：
@@ -78,6 +83,7 @@ projects/*/sources/
 build/
 out/
 projects/*/sources/
+projects/*/.source-signature
 ```
 
 因此，正常下载源码和执行构建不会把这些生成产物加入 Git 工作区状态。
@@ -104,12 +110,14 @@ apt-get install -y --no-install-recommends ...
 autoconf
 automake
 autopoint
+binutils
 bison
 build-essential
 bzip2
 ca-certificates
 curl
 flex
+file
 g++
 gettext
 git
@@ -181,7 +189,10 @@ root 用户执行脚本。
 4. 检查本地构建命令是否齐全；
 5. 选择已有 Android NDK，或在需要时下载 NDK；
 6. 检查对应架构和 API 的 NDK Clang 驱动是否存在；
-7. 将参数传给项目 Makefile，执行本地交叉编译。
+7. 将参数传给项目 Makefile，执行本地交叉编译；
+8. 对 `all` 构建的六个产物执行压缩包、ELF、依赖和内容检查；
+9. 生成 SHA-256 校验清单；
+10. 根据 adb 设备状态决定执行或跳过真机测试。
 
 脚本通过自身路径定位项目根目录，因此不要求当前 shell 必须位于项目根目录。
 
@@ -299,14 +310,17 @@ arm64
 | --- | --- | --- |
 | `arm64` | `aarch64-linux-android` | 64 位 ARM Android 设备 |
 | `x86_64` | `x86_64-linux-android` | 64 位 x86 Android 设备/模拟器 |
-| `armv7` | `armv7a-linux-androideabi` | 32 位 ARM Android 设备 |
+
+本 fork 已移除 armv7/`armeabi-v7a` 构建路径；脚本和 Makefile 都会拒绝该值，不再生成、
+验证或发布 32 位 ARM 产物。
 
 示例：
 
 ```bash
-NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh
-NDK_ARCH=armv7 ./scripts/resolute-local-build.sh
+NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftools
 ```
+
+特殊目标 `all` 始终构建两个受支持架构，因此 `NDK_ARCH` 只影响普通 Make 目标。
 
 不同架构的 Android 构建目录位于：
 
@@ -410,7 +424,21 @@ NDK_DOWNLOAD_URL=https://example.invalid/android-ndk-r27d-linux.zip \
 
 自定义压缩包解压后仍必须包含名为 `android-ndk-${NDK_VERSION}` 的顶层目录。
 
-### 5.10 DOWNLOAD_NDK
+### 5.10 NDK_DOWNLOAD_SHA256
+
+默认的 Google 官方 r27d Linux 压缩包摘要已经内置。使用其他 `NDK_VERSION` 或
+`NDK_DOWNLOAD_URL` 触发下载时，必须显式提供对应的小写 SHA-256：
+
+```bash
+NDK_VERSION=r29 \
+NDK_DOWNLOAD_SHA256=<64位十六进制摘要> \
+    ./scripts/resolute-local-build.sh
+```
+
+摘要不匹配时，临时文件会被删除，NDK 不会解压或进入缓存目录。已有的显式 NDK 目录
+不会重新压缩计算摘要；该参数保护的是脚本自动下载的归档。
+
+### 5.11 DOWNLOAD_NDK
 
 默认值：
 
@@ -426,7 +454,7 @@ DOWNLOAD_NDK=0 ./scripts/resolute-local-build.sh
 
 此时如果没有找到已有 NDK，脚本会报错退出。
 
-### 5.11 BUILD_TYPE
+### 5.12 BUILD_TYPE
 
 默认值：
 
@@ -449,7 +477,7 @@ BUILD_TYPE=Debug ./scripts/resolute-local-build.sh
 
 其他大小写或其他值都会被拒绝。
 
-### 5.12 STATIC_LINKING
+### 5.13 STATIC_LINKING
 
 默认值：
 
@@ -466,7 +494,7 @@ STATIC_LINKING=true ./scripts/resolute-local-build.sh
 该值传给项目 Makefile，用于支持静态链接的组件。是否能够完全静态化仍取决于具体
 项目、NDK 和依赖库的构建规则。
 
-### 5.13 LLVM_BPF_ONLY
+### 5.14 LLVM_BPF_ONLY
 
 默认值：
 
@@ -483,7 +511,7 @@ LLVM_BPF_ONLY=true ./scripts/resolute-local-build.sh
 这样可以缩小 LLVM 构建内容，但并非所有工具都能工作。例如 BCC 的 rwengine 还需要
 当前 Android 架构对应的 LLVM target。需要完整功能时应保留默认值 `false`。
 
-### 5.14 ALLOW_UNSUPPORTED_HOST
+### 5.15 ALLOW_UNSUPPORTED_HOST
 
 默认值：
 
@@ -498,6 +526,26 @@ ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
 ```
 
 该变量不会跳过 x86_64 检查，也不会自动修复其他系统上的依赖、编译器或 ABI 差异。
+
+### 5.16 VERIFY_ARTIFACTS
+
+默认值为 `1`。`all` 构建完成后会调用 `verify-artifacts.sh` 验证六个产物。设置为 `0`
+可以临时跳过离线验收，但不建议用于发布构建：
+
+```bash
+VERIFY_ARTIFACTS=0 ./scripts/resolute-local-build.sh all
+```
+
+### 5.17 DEVICE_TEST
+
+支持 `auto`、`required` 和 `0`，默认是 `auto`：
+
+- `auto`：只有 adb 能确定唯一一台处于 `device` 状态的受支持设备时才测试，否则跳过；
+- `required`：没有满足条件的设备也视为失败；
+- `0`：明确禁用真机测试。
+
+多设备环境应通过 `ANDROID_SERIAL` 选择目标。在线 pip 和 root BPF 探针的严格程度还可
+分别通过 `DEVICE_NETWORK_REQUIRED=1`、`DEVICE_BPF_REQUIRED=1` 提高。
 
 
 ## 6. Android NDK 选择顺序
@@ -540,7 +588,9 @@ ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
 
 该特殊目标对 arm64 和 x86_64 分别执行一次共享构建。同一架构的完整包、精简包和静态
 `bpftrace` 复用 LLVM、BCC 及其他依赖，只为静态 `bpftrace` 保留独立的 CMake 构建目录，
-避免静态与动态链接配置相互覆盖。最终生成：
+避免静态与动态链接配置相互覆盖。宿主机上的 `llvm-config`、`llvm-tblgen` 和
+`clang-tblgen` 一次构建时同时启用 AArch64、BPF 和 X86 后端，由两个 Android 架构共享；
+Android LLVM 目标库仍按架构各构建一次。最终生成：
 
 ```text
 out/bpftools-arm64.tar.gz
@@ -570,6 +620,7 @@ out/bpftrace-x86_64
 - `projects/versions.mk` 当前选择的 Python 可执行程序和运行库；
 - 与该 CPython 版本配套的 `pip`/`pip3` 入口；
 - Python HTTPS 所需的 OpenSSL 动态库和 CA 证书包；
+- Python `compression.zstd` 所需的 Zstandard 动态库；
 - BCC 与 BPF 相关动态库；
 - `libclang.so`；
 - `libbpf`、`libelf`、`liblzma`、`libffi` 等运行库；
@@ -581,7 +632,6 @@ out/bpftrace-x86_64
 ```text
 out/bpftools-arm64.tar.gz
 out/bpftools-x86_64.tar.gz
-out/bpftools-armv7.tar.gz
 ```
 
 ### 7.3 bpftools-min
@@ -600,7 +650,6 @@ out/bpftools-armv7.tar.gz
 ```text
 out/bpftools-min-arm64.tar.gz
 out/bpftools-min-x86_64.tar.gz
-out/bpftools-min-armv7.tar.gz
 ```
 
 ### 7.4 bpftrace-static
@@ -638,6 +687,12 @@ NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftrace-static
 projects/versions.mk
 ```
 
+`psf/black` GitHub Action 是唯一例外。由于 workflow 不能直接读取 Make 变量，而且第三方
+Action 的提交 SHA、Action release 和传入的 Black 版本必须作为一组审核，
+`.github/workflows/black.yml` 会独立固定该版本。升级 Black 时需要同时更新
+`projects/versions.mk` 中的 `BLACK_VERSION`、workflow 的 Action SHA、版本注释和 `version`
+输入；其余项目版本仍只在 `projects/versions.mk` 维护。
+
 Python 只需要在清单中设置一次完整版本：
 
 ```make
@@ -653,21 +708,27 @@ PYTHON_VERSION := <major.minor.patch>
 
 ```bash
 # 1. 修改 projects/versions.mk 中一个模块的版本
-# 2. 删除该模块旧源码，并清除所有共享构建/安装输出
-CLEAN_MODULES=python CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
-
-# 3. 先验证模块本身
+# 2. 先验证模块本身；源码签名会自动刷新不匹配的源码目录
 ./scripts/resolute-local-build.sh python
 
-# 4. 再验证最终依赖链和两个包
+# 3. 再验证最终依赖链和两个包
 ./scripts/resolute-local-build.sh bpftools bpftools-min
 ```
 
-将 `python` 替换为 `ffi`、`xz`、`elfutils`、`bcc` 或其他项目名即可。模块使用 Git
+将 `python` 替换为 `ffi`、`xz`、`zstd`、`elfutils`、`bcc` 或其他项目名即可。模块使用 Git
 提交而不是 release tag 时，也只在 `projects/versions.mk` 更新提交哈希。LLVM 同样在该文件
 声明，但当前项目明确固定为 `llvmorg-21.1.8`。OpenSSL 的 LTS 版本和 CPython 内置的
 pip wheel 版本也分别由 `OPENSSL_VERSION`、`PIP_VERSION` 统一声明；升级 Python 时应同步
 确认源码树 `Lib/ensurepip/_bundled/` 中的 pip wheel 文件名并更新 `PIP_VERSION`。
+
+每个下载或生成的源码目录都有一个被 Git 忽略的
+`projects/<module>/.source-signature`。版本、仓库、归档摘要或补丁输入发生变化时，旧
+`sources/` 会自动删除并按新声明重新获取。Python、OpenSSL、Zstandard、BCC、bpftrace 和 LLVM
+另外记录构建配置签名；NDK、API、架构、链接模式或关键构建规则变化时会在原构建目录
+重新配置。NDK 的 `libc++_shared.so` 也有独立签名；切换 NDK 路径、版本或库文件内容时会
+自动刷新输出副本。LLVM、libbpf、elfutils、Zstandard 和 OpenSSL 在重新安装前还会清除各自旧的
+版本化共享库族，避免共享输出目录中的旧 SONAME 文件被打进新发布包。`CLEAN_MODULES`
+仍可用于人工排障，但不再是日常修改版本号后的必需步骤。
 
 不同 `NDK_ARCH` 的 `python.xinstall` 分别生成在：
 
@@ -722,27 +783,39 @@ Android wheel、编译器、头文件或目标库而无法在设备上现场构�
 运行 pip 时出现 root 用户警告属于 pip 的通用提示；希望隔离安装内容时优先使用
 `--target`。
 
-### 7.8 LLVM 配置签名与缓存复用
+### 7.8 源码与构建配置签名
 
-每个 Android 架构的 LLVM 构建目录都有一份自动生成的配置签名：
+每个 Android 架构的 NDK libc++、LLVM、Python、OpenSSL、Zstandard、elfutils、libbpf、
+stdc++fs、BCC 和 bpftrace 都有自动生成的配置签名，例如：
 
 ```text
 build/android/<NDK_ARCH>/llvm.config
+build/android/<NDK_ARCH>/libcxx-shared.config
+build/android/<NDK_ARCH>/python.config
+build/android/<NDK_ARCH>/openssl.config
+build/android/<NDK_ARCH>/zstd.config
+build/android/<NDK_ARCH>/elfutils.config
+build/android/<NDK_ARCH>/libbpf.config
+build/android/<NDK_ARCH>/stdc++fs.config
+build/android/<NDK_ARCH>/bcc.config
+build/android/<NDK_ARCH>/bpftrace.config
 ```
 
-签名记录 LLVM tag 和实际源码提交、NDK 路径和版本、API、架构、CMake 版本、构建类型、
-`STATIC_LINKING`、`LLVM_BPF_ONLY`、LLVM targets、动态库选项以及相关构建规则的哈希。
+签名记录源码版本和实际提交、NDK 路径和版本、API、架构、CMake/Python 版本、构建类型、
+`STATIC_LINKING`、`LLVM_BPF_ONLY`、LLVM targets、动态库选项及各模块的关键配置输入。
+其中 `libcxx-shared.config` 还记录 NDK 库文件的 SHA-256，因此即使原文件时间戳没有变，
+内容变化也会触发重新复制。
 该文件位于已被 `.gitignore` 排除的 `build/` 目录，不会修改 Git 工作树。
 
 每次构建都会重新计算签名，但内容相同时不会更新时间戳，也不会重新配置或编译 LLVM。
-配置发生变化时，构建会打印新旧字段差异，自动在原目录重新运行 CMake，并通过更新后的
-`llvm.done` 触发 BCC、bpftrace 等下游模块按需重新配置和链接。例如从
+配置发生变化时，构建会打印新旧字段差异，自动在原目录重新运行对应配置步骤；源码和
+依赖模块的完成标记也会直接传播到最终构建目标，触发下游模块按需重新配置和链接。例如从
 `STATIC_LINKING=true` 切回动态完整包时，不再需要为了恢复 `libLLVM.so` 手动清理 LLVM
 缓存。
 
-该机制不会删除 LLVM 源码或 host LLVM。切换 `LLVM_BRANCH_OR_TAG` 时仍应使用
-`CLEAN_MODULES=llvm` 重新获取对应源码；配置签名解决的是同一份源码构建目录被不兼容
-CMake 参数复用的问题。
+切换 `LLVM_BRANCH_OR_TAG` 时，LLVM 源码签名会自动重新获取对应源码；同一份源码切换
+动态/静态 LLVM 配置时，构建配置签名会在原目录重新运行 CMake。通常不再需要手动清理
+LLVM，只有排查上游构建系统没有正确处理的残留状态时才使用 `CLEAN_MODULES=llvm`。
 
 
 ## 8. 清理功能
@@ -889,11 +962,13 @@ Cleanup completed; CLEAN_ONLY=1, so no build was started.
 
 ## 9. 常用构建示例
 
-### 9.1 默认 arm64 完整包
+### 9.1 默认构建全部六个产物
 
 ```bash
 ./scripts/resolute-local-build.sh
 ```
+
+这等价于显式传入 `all`，会构建 arm64 和 x86_64 的全部六个产物。
 
 ### 9.2 arm64 精简包
 
@@ -905,43 +980,39 @@ Cleanup completed; CLEAN_ONLY=1, so no build was started.
 
 ```bash
 NDK_ARCH=x86_64 NDK_API=35 THREADS=16 \
-    ./scripts/resolute-local-build.sh
+    ./scripts/resolute-local-build.sh bpftools bpftools-min bpftrace-static
 ```
 
-### 9.4 armv7、API 28
-
-```bash
-NDK_ARCH=armv7 NDK_API=28 ./scripts/resolute-local-build.sh
-```
-
-### 9.5 Debug 构建
+### 9.4 Debug 构建
 
 ```bash
 BUILD_TYPE=Debug ./scripts/resolute-local-build.sh
 ```
 
-### 9.6 使用指定 NDK
+### 9.5 使用指定 NDK
 
 ```bash
 NDK_PATH=/mnt/develop/android-ndk-r27d \
     ./scripts/resolute-local-build.sh
 ```
 
-### 9.7 禁止自动下载 NDK
+### 9.6 禁止自动下载 NDK
 
 ```bash
 DOWNLOAD_NDK=0 ./scripts/resolute-local-build.sh
 ```
 
-### 9.8 切换 LLVM tag 后重新获取 LLVM 并构建
+### 9.7 切换 LLVM tag 后自动刷新源码并构建
 
-先确认 `projects/versions.mk` 中的 `LLVM_BRANCH_OR_TAG` 已更新，然后运行：
+更新 `projects/versions.mk` 中的 `LLVM_BRANCH_OR_TAG` 后直接运行：
 
 ```bash
-CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
+./scripts/resolute-local-build.sh llvm
 ```
 
-### 9.9 全量重新构建但保留所有第三方源码
+源码签名会使旧 LLVM 源码目录失效；无需预先执行模块清理。
+
+### 9.8 全量重新构建但保留所有第三方源码
 
 项目原有 Makefile 提供 `clean` 目标，只删除 `build/` 和 `out/`：
 
@@ -1038,16 +1109,14 @@ error: temporary NDK path exists but is incomplete
 脚本不会自动覆盖已有目录。先检查该目录，确认其中没有需要保留的内容，再手动修复或
 移走，然后重新运行脚本。
 
-### 11.5 修改源码版本后仍使用旧源码
+### 11.5 源码签名触发自动刷新
 
-修改 `projects/versions.mk` 中的 tag、版本号或提交哈希，并不会自动替换已经存在的
-`projects/<module>/sources`。
+修改 `projects/versions.mk` 中的 tag、版本号、提交哈希或归档摘要后，对应的
+`projects/<module>/.source-signature` 会发生变化，下一次构建将删除旧 `sources/` 并获取
+新版本。日志会打印签名差异，便于确认究竟是哪一项触发了刷新。
 
-例如修改 LLVM tag 后，应执行：
-
-```bash
-CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
-```
+如果下载被中断，重新运行同一构建命令即可；归档先写入临时文件，只有摘要验证通过后
+才会原子替换正式缓存。需要排查异常残留时仍可使用 `CLEAN_MODULES=<module>` 强制清理。
 
 ### 11.6 增量构建状态异常
 
@@ -1083,16 +1152,12 @@ error: too many arguments to function 'malloc'; expected 0, have 1
 
 仓库已将 Flex 固定到 2026 年 7 月 30 日的上游 master 提交
 `4fcc71489ae298c35b0b786114ad524945f2cf95`，其中已经包含 C23 `malloc` 原型修复。如果
-错误发生前已经下载了旧 Flex 源码，只修改 `projects/versions.mk` 不会自动替换现有的
-`projects/flex/sources`，需要执行：
+错误发生前已经下载了旧 Flex 源码，当前源码签名机制会识别提交哈希变化并自动刷新
+`projects/flex/sources`。正常情况下直接重新构建即可：
 
 ```bash
-CLEAN_MODULES=flex CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
 ./scripts/resolute-local-build.sh
 ```
-
-第一条命令会清理共享的 `build/`、`out/`、打包产物和旧 Flex 源码；第二条命令才会获取
-新提交并重新开始构建。不要在第二条命令中继续设置 `CLEAN_ONLY=1`。
 
 这个新 Flex 提交还会在非交叉编译的主机构建中执行二阶段 bootstrap 一致性检查。该检查
 在高并发 `make install` 时可能让两个规则同时生成 `stage1scan.o`，表现为：
@@ -1125,6 +1190,17 @@ test -x /mnt/develop/android-ndk-r27d/toolchains/llvm/prebuilt/linux-x86_64/bin/
 
 ```bash
 ls -lh out/bpftools-*.tar.gz out/bpftrace-arm64 out/bpftrace-x86_64
+./scripts/verify-artifacts.sh
+(cd out && sha256sum --check SHA256SUMS)
+```
+
+也可以独立调用 `android-smoke-test.sh`。没有唯一可用设备时默认成功跳过，不会因为没有
+连接手机而让本地构建失败：
+
+```bash
+./scripts/android-smoke-test.sh
+DEVICE_TEST=required DEVICE_NETWORK_REQUIRED=1 \
+    ./scripts/android-smoke-test.sh
 ```
 
 确认生成文件没有意外进入 Git 状态：
@@ -1169,39 +1245,36 @@ CI 失败时应先区分 runner 基础设施问题和项目编译问题。
 run 重复下载。LLVM 和完整构建目录不进入缓存，以避免大体积缓存占用免费存储额度，并
 避免不同构建参数之间复用不兼容的 CMake 状态。
 
-三个 Android 构建类型分别为：
+每个架构 job 一次构建以下三个 Android 产物：
 
 ```text
 bpftools
 bpftools-min
-bpftrace（STATIC_LINKING=true、LLVM_BPF_ONLY=true）
+bpftrace-static
 ```
 
 这些构建继续为 arm64 和 x86_64 分别上传对应产物。
 
-为了减少免费 Actions 用量，同一架构的 `bpftools` 和 `bpftools-min` 在同一个 job 中
-连续作为两个 Make 目标构建：
-
-```bash
-./scripts/resolute-local-build.sh bpftools bpftools-min
-```
-
-精简包会复用完整包已经完成的 LLVM、BCC 和其他依赖构建，不再为同一架构从头执行一次
-相同的动态构建。因此整个矩阵由原来的 6 个标准 runner job 减少为 4 个：2 个架构的
-完整包/精简包组合 job，加上 2 个架构的静态 bpftrace job。三个产物仍分别上传，上传
-保留期设置为 7 天以降低长期存储占用。
-
-新增的 `bpftrace-static` 目标已经允许未来把同一架构的三个目标合并到一个 job：
+三个目标作为同一个 Make 调用执行：
 
 ```bash
 ./scripts/resolute-local-build.sh bpftools bpftools-min bpftrace-static
 ```
 
-这样可以让动态包和静态 bpftrace 共用一次完整 LLVM 构建，并把当前 4 个 Android job
-进一步缩减为 2 个架构矩阵 job；六个上传产物仍可保留。不过 arm64 和 x86_64 的 Android
-目标文件不能互相复用，因此这里的“一次”是每个架构一次，而不是两个架构合计一次。
-当前 workflow 为保持既有 CI 构建和上传路径，仅迁移了 tar 文件在工作区内的位置，尚未
-合并动态与静态 job。
+完整包、精简包和静态 bpftrace 因而共用同一架构的一套完整 LLVM、BCC 和其他依赖，
+Android 矩阵只需要 arm64、x86_64 两个 job。CI 的两个矩阵 job 是隔离环境，因此每个
+job 各构建一次宿主 LLVM 和对应架构的 Android LLVM；本地 `all` 构建则让两个架构共享
+同一套宿主 LLVM 工具。workflow 仍包含三个 `upload-artifact` 步骤，矩阵
+展开后保持六个独立上传产物；每个上传内容同时附带该架构的 SHA-256 清单，保留期为
+7 天。
+
+构建完成后 CI 会先运行 `verify-artifacts.sh`，确认压缩包结构、包内所有 ELF 的架构和
+共享库依赖闭包、Python TLS/pip 内容，以及静态 bpftrace 不依赖打包的
+LLVM/Clang/BCC 动态库，验证通过才允许上传。
+
+推送 `v*` tag 时，`.github/workflows/release.yml` 使用同样的双架构构建和验收流程，发布
+六个产品文件及一个合并的 `SHA256SUMS` 到 GitHub Release。`CHANGELOG.md` 记录面向发布
+用户的重要变化。
 
 workflow 还包含两项免费额度保护：
 

@@ -169,6 +169,13 @@ define project-define =
 
   $(call project-android-target,$(1)): \
       $(call project-android-build-dir,$(1)) \
+      $(call project-optional-sources-target,$(1)) \
+      $(foreach dep,\
+          $($(call _project-android-deps-var,$(1))),\
+          $(call project-android-target,$(dep))) \
+      $(foreach dep,\
+          $($(call _project-host-deps-var,$(1))),\
+          $(call project-host-target,$(dep))) \
       | $(ANDROID_OUT_DIR)
 
   $(call project-android-build-dir,$(1)): \
@@ -183,6 +190,10 @@ define project-define =
 
   $(call project-host-target,$(1)): \
       $(call project-host-build-dir,$(1)) \
+      $(call project-optional-sources-target,$(1)) \
+      $(foreach dep,\
+          $($(call _project-host-deps-var,$(1))),\
+          $(call project-host-target,$(dep))) \
       | $(HOST_OUT_DIR)
 
   $(call project-host-build-dir,$(1)): \
@@ -199,18 +210,80 @@ define project-define =
   remove-$(1)-sources: ; rm -rf projects/$(1)/sources
 endef
 
+# Keep fetched/generated source directories synchronized with the identity
+# declared in versions.mk. The signature file lives outside the source tree so
+# a changed version can make the existing directory target out of date without
+# forcing network access on unchanged builds.
+source-inputs-sha256 = $(strip $(if $(strip $(1)),\
+    $(shell sha256sum $(1) | sha256sum | cut -d ' ' -f 1),\
+    none))
+
+# Directory targets otherwise survive a failed clone/extract and can be
+# mistaken for complete source trees by the next Make invocation.
+source-transaction-begin = set -eu; \
+    source_target="$(abspath $(1))"; \
+    trap 'rm -rf -- "$$source_target"' 0 1 2 3 15; \
+    rm -rf -- "$$source_target"
+# Archives can preserve an upstream timestamp on their top-level directory.
+# Refresh it only after a successful fetch so Make does not mistake a complete
+# source tree for being older than its local source-identity signature.
+source-transaction-commit = touch "$$source_target"; trap - 0 1 2 3 15
+
+# Every Android module installs into one shared prefix. Remove a module-owned
+# library family immediately before reinstalling it so an ABI/version upgrade
+# cannot leave obsolete SONAME files for the packaging globs to collect.
+clean-android-library-families = \
+    $(RM) $(addprefix $(ANDROID_OUT_DIR)/lib/,$(1))
+
+.PHONY: force-config-signature
+force-config-signature:
+
+HOST_CONFIG_SIGNATURE_ARGS = \
+    "HOST_OS=$(HOST_OS)" \
+    "HOST_MACHINE=$(HOST_MACHINE)" \
+    "HOST_OUT_DIR=$(abspath $(HOST_OUT_DIR))" \
+    "BUILD_TYPE=$(BUILD_TYPE)"
+
+define project-source-signature =
+  .PHONY: force-$(1)-source-signature
+  force-$(1)-source-signature:
+
+  projects/$(1)/.source-signature: force-$(1)-source-signature
+  projects/$(1)/.source-signature: projects/versions.mk
+  projects/$(1)/.source-signature: scripts/update-signature.sh
+	@scripts/update-signature.sh $$@ \
+	    "PROJECT=$(1)" \
+	    "SOURCE_ID=$(2)" \
+	    "INPUTS_SHA256=$(call source-inputs-sha256,$(3))"
+
+  projects/$(1)/sources: projects/$(1)/.source-signature
+endef
+
 # Macro defining rules installing a python library/tool via pip
 define pip-project =
   $(call project-to-var,$(1))_HOST := \
       $(call project-host-target,$(1))
 
+  $(call project-to-var,$(1))_HOST_CONFIG := \
+      $(HOST_BUILD_DIR)/$(1).config
+
   $(1)-host: $(call project-host-target,$(1))
 
   $(call project-host-target,$(1)): \
       $(call project-host-target,python) \
+      $(HOST_BUILD_DIR)/$(1).config \
       | $(HOST_BUILD_DIR)
 	PYTHONNOUSERSITE=1 $(PYTHON_HOST_EXECUTABLE) -s -m pip install \
 	    --disable-pip-version-check \
 	    $(if $(2),$(2),$(1))
 	touch $$@
+
+  $(HOST_BUILD_DIR)/$(1).config: force-config-signature
+  $(HOST_BUILD_DIR)/$(1).config: projects/versions.mk
+  $(HOST_BUILD_DIR)/$(1).config: scripts/update-signature.sh | $(HOST_BUILD_DIR)
+	@scripts/update-signature.sh $$@ \
+	    "PROJECT=$(1)-host" \
+	    "PACKAGE=$(if $(2),$(2),$(1))" \
+	    "PYTHON_VERSION=$(PYTHON_VERSION)" \
+	    $(HOST_CONFIG_SIGNATURE_ARGS)
 endef

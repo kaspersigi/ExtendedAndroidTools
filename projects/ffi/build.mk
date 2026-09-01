@@ -23,5 +23,9 @@ $(FFI_HOST_BUILD_DIR): $(HOST_CONFIG_SITE)
 
 FFI_REPO = https://github.com/libffi/libffi
 projects/ffi/sources:
-	git clone $(FFI_REPO) $@ --depth=1 -b $(FFI_BRANCH_OR_TAG)
-	cd $@ && autoreconf -i -f
+	@$(call source-transaction-begin,$@); \
+	git clone $(FFI_REPO) $@ --depth=1 -b $(FFI_BRANCH_OR_TAG); \
+	cd $@ && autoreconf -i -f; \
+	$(source-transaction-commit)
+
+$(eval $(call project-source-signature,ffi,git:$(FFI_REPO)@$(FFI_BRANCH_OR_TAG)))

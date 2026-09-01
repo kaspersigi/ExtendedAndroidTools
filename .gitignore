@@ -12,6 +12,7 @@
 
 # sources
 /projects/*/sources
+/projects/*/.source-signature
 
 # Vagrant files
 .vagrant/

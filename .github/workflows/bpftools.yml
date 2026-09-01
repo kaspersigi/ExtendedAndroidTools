@@ -2,21 +2,23 @@ name: Build bpftools archives
 
 on:
   push:
+    branches:
+      - "**"
     paths:
       - .github/workflows/bpftools.yml
       - Makefile
+      - licenses/**
       - projects/**
-      - scripts/resolute-install-deps.sh
-      - scripts/resolute-local-build.sh
+      - scripts/*.sh
       - sysroot/**
       - toolchains/**
   pull_request:
     paths:
       - .github/workflows/bpftools.yml
       - Makefile
+      - licenses/**
       - projects/**
-      - scripts/resolute-install-deps.sh
-      - scripts/resolute-local-build.sh
+      - scripts/*.sh
       - sysroot/**
       - toolchains/**
 
@@ -32,8 +34,8 @@ env:
   NDK_VERSION: r27d
 
 jobs:
-  build_bpftools_archives:
-    name: Build bpftools archives (${{ matrix.arch }})
+  build_release_artifacts:
+    name: Build three release artifacts (${{ matrix.arch }})
     runs-on: ubuntu-26.04
     strategy:
       matrix:
@@ -41,56 +43,49 @@ jobs:
           - arm64
           - x86_64
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Cache Android NDK
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}/android-ndk-${{ env.NDK_VERSION }}
           key: android-ndk-${{ runner.os }}-${{ env.NDK_VERSION }}-linux-x86_64
       - name: Install dependencies
         run: ./scripts/resolute-install-deps.sh
-      - name: Build full and minimal archives
+      - name: Build full archive, minimal archive, and static bpftrace
         env:
           NDK_ARCH: ${{ matrix.arch }}
           NDK_TMP_DIR: ${{ runner.temp }}
-        run: ./scripts/resolute-local-build.sh bpftools bpftools-min
-      - uses: actions/upload-artifact@v7
+          STATIC_LINKING: "false"
+          LLVM_BPF_ONLY: "false"
+        run: ./scripts/resolute-local-build.sh bpftools bpftools-min bpftrace-static
+      - name: Verify artifacts and generate checksums
+        env:
+          ARCHES: ${{ matrix.arch }}
+          CHECKSUM_FILE: out/SHA256SUMS-${{ matrix.arch }}
+        run: |
+          ./scripts/verify-artifacts.sh
+          ./scripts/generate-checksums.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bpftools-android-${{ matrix.arch }}.tar.gz
-          path: out/bpftools-${{ matrix.arch }}.tar.gz
+          path: |
+            out/bpftools-${{ matrix.arch }}.tar.gz
+            out/SHA256SUMS-${{ matrix.arch }}
+          if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bpftools-min-android-${{ matrix.arch }}.tar.gz
-          path: out/bpftools-min-${{ matrix.arch }}.tar.gz
+          path: |
+            out/bpftools-min-${{ matrix.arch }}.tar.gz
+            out/SHA256SUMS-${{ matrix.arch }}
+          if-no-files-found: error
           retention-days: 7
-
-  build_bpftrace_static:
-    name: Build static bpftrace binaries (${{ matrix.arch }})
-    runs-on: ubuntu-26.04
-    strategy:
-      matrix:
-        arch:
-          - arm64
-          - x86_64
-    steps:
-      - uses: actions/checkout@v7
-      - name: Cache Android NDK
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/android-ndk-${{ env.NDK_VERSION }}
-          key: android-ndk-${{ runner.os }}-${{ env.NDK_VERSION }}-linux-x86_64
-      - name: Install dependencies
-        run: ./scripts/resolute-install-deps.sh
-      - name: Build
-        env:
-          LLVM_BPF_ONLY: "true"
-          NDK_ARCH: ${{ matrix.arch }}
-          NDK_TMP_DIR: ${{ runner.temp }}
-          STATIC_LINKING: "true"
-        run: ./scripts/resolute-local-build.sh bpftrace
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bpftrace-android-${{ matrix.arch }}
-          path: out/android/${{ matrix.arch }}/bin/bpftrace
+          path: |
+            out/bpftrace-${{ matrix.arch }}
+            out/SHA256SUMS-${{ matrix.arch }}
+          if-no-files-found: error
           retention-days: 7

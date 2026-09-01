@@ -9,7 +9,7 @@ $(CEREAL_ANDROID):
 	touch $@
 
 $(CEREAL_ANDROID_BUILD_DIR):
-	-mkdir $@
+	mkdir -p $@
 	cd $@ && $(CMAKE) $(CEREAL_SRCS) \
 		$(ANDROID_EXTRA_CMAKE_FLAGS) \
 		-DBUILD_TESTS=OFF \
@@ -19,4 +19,8 @@ $(CEREAL_ANDROID_BUILD_DIR):
 
 CEREAL_REPO = https://github.com/USCiLab/cereal
 projects/cereal/sources:
-	git clone $(CEREAL_REPO) --depth=1 -b $(CEREAL_TAG) $@
+	@$(call source-transaction-begin,$@); \
+	git clone $(CEREAL_REPO) --depth=1 -b $(CEREAL_TAG) $@; \
+	$(source-transaction-commit)
+
+$(eval $(call project-source-signature,cereal,git:$(CEREAL_REPO)@$(CEREAL_TAG)))

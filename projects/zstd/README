@@ -1,0 +1,10 @@
+Zstandard
+Zstandard is a fast lossless compression algorithm and library.
+
+Home page: https://facebook.github.io/zstd/
+License: BSD-3-Clause/GPL-2.0-only dual license
+License URL: https://github.com/facebook/zstd/blob/dev/LICENSE
+
+The selected release is defined in `projects/versions.mk`. Only libzstd is
+cross-compiled; the command-line program, tests, and contrib targets are not
+needed by the packaged Python runtime.

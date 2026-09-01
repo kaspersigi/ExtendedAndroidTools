@@ -1,0 +1,99 @@
+name: Release Android artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NDK_API: "35"
+  NDK_VERSION: r27d
+
+jobs:
+  build:
+    name: Build release (${{ matrix.arch }})
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        arch:
+          - arm64
+          - x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Cache Android NDK
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/android-ndk-${{ env.NDK_VERSION }}
+          key: android-ndk-${{ runner.os }}-${{ env.NDK_VERSION }}-linux-x86_64
+      - name: Install dependencies
+        run: ./scripts/resolute-install-deps.sh
+      - name: Build and verify three artifacts
+        env:
+          ARCHES: ${{ matrix.arch }}
+          CHECKSUM_FILE: out/SHA256SUMS-${{ matrix.arch }}
+          NDK_ARCH: ${{ matrix.arch }}
+          NDK_TMP_DIR: ${{ runner.temp }}
+          STATIC_LINKING: "false"
+          LLVM_BPF_ONLY: "false"
+        run: |
+          ./scripts/resolute-local-build.sh bpftools bpftools-min bpftrace-static
+          ./scripts/verify-artifacts.sh
+          ./scripts/generate-checksums.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.arch }}
+          path: |
+            out/bpftools-${{ matrix.arch }}.tar.gz
+            out/bpftools-min-${{ matrix.arch }}.tar.gz
+            out/bpftrace-${{ matrix.arch }}
+            out/SHA256SUMS-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Verify and combine checksums
+        run: |
+          cd dist
+          sha256sum --check SHA256SUMS-arm64
+          sha256sum --check SHA256SUMS-x86_64
+          cat SHA256SUMS-arm64 SHA256SUMS-x86_64 | LC_ALL=C sort -k2 > SHA256SUMS
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          assets=(
+            dist/bpftools-arm64.tar.gz
+            dist/bpftools-min-arm64.tar.gz
+            dist/bpftrace-arm64
+            dist/bpftools-x86_64.tar.gz
+            dist/bpftools-min-x86_64.tar.gz
+            dist/bpftrace-x86_64
+            dist/SHA256SUMS
+          )
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" --clobber "${assets[@]}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --verify-tag \
+              --generate-notes \
+              --title "${GITHUB_REF_NAME}" \
+              "${assets[@]}"
+          fi

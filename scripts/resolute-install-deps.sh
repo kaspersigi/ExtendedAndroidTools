@@ -52,12 +52,14 @@ packages=(
     autoconf
     automake
     autopoint
+    binutils
     bison
     build-essential
     bzip2
     ca-certificates
     curl
     flex
+    file
     g++
     gettext
     git

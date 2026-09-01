@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # Edit the defaults below when this script is your regular build entry point,
 # or override any value from the environment, for example:
-#   THREADS=8 NDK_API=35 NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh
+#   THREADS=8 NDK_API=35 NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftools
 # -----------------------------------------------------------------------------
 BUILD_TARGET="${BUILD_TARGET:-all}"
 THREADS="${THREADS:-$(nproc)}"
@@ -19,6 +19,7 @@ NDK_PATH="${NDK_PATH:-}"
 PREFERRED_NDK_PATH="${PREFERRED_NDK_PATH:-/mnt/develop/android-ndk-$NDK_VERSION}"
 NDK_TMP_DIR="${NDK_TMP_DIR:-/tmp}"
 NDK_DOWNLOAD_URL="${NDK_DOWNLOAD_URL:-}"
+NDK_DOWNLOAD_SHA256="${NDK_DOWNLOAD_SHA256:-}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 STATIC_LINKING="${STATIC_LINKING:-false}"
 LLVM_BPF_ONLY="${LLVM_BPF_ONLY:-false}"
@@ -27,6 +28,8 @@ ALLOW_UNSUPPORTED_HOST="${ALLOW_UNSUPPORTED_HOST:-0}"
 CLEAN_MODULES="${CLEAN_MODULES:-}"
 CLEAN_ALL="${CLEAN_ALL:-0}"
 CLEAN_ONLY="${CLEAN_ONLY:-0}"
+VERIFY_ARTIFACTS="${VERIFY_ARTIFACTS:-1}"
+DEVICE_TEST="${DEVICE_TEST:-auto}"
 
 usage() {
     cat <<'EOF'
@@ -50,14 +53,16 @@ Environment variables:
   BUILD_TARGET           Default target when no argument is given (all).
   THREADS                Parallel jobs passed to nested builds (default: nproc).
   NDK_API                Android API level used for compilation (default: 35).
-  NDK_ARCH               arm64 (default), x86_64, or armv7 for individual
-                         targets. The special all target builds arm64/x86_64.
+  NDK_ARCH               arm64 (default) or x86_64. The special all target
+                         builds both supported architectures.
   NDK_VERSION            Android NDK release used for auto-download (default: r27d).
   NDK_PATH               Explicit Android NDK path. It takes highest priority.
   PREFERRED_NDK_PATH     Preferred existing NDK path
                          (default: /mnt/develop/android-ndk-r27d).
   NDK_TMP_DIR            Auto-download parent directory (default: /tmp).
   NDK_DOWNLOAD_URL       Optional complete URL overriding the Google NDK URL.
+  NDK_DOWNLOAD_SHA256    SHA-256 for an automatically downloaded NDK. The r27d
+                         Linux checksum is built in; other downloads must set it.
   BUILD_TYPE             Release (default) or Debug.
   STATIC_LINKING         true or false (default: false).
   LLVM_BPF_ONLY          true or false (default: false).
@@ -69,6 +74,9 @@ Environment variables:
   CLEAN_ALL              Set to 1 to clear all build/output/package artifacts
                          and all fetched project sources before building.
   CLEAN_ONLY             Set to 1 to stop after CLEAN_MODULES or CLEAN_ALL.
+  VERIFY_ARTIFACTS       Verify all six artifacts after an all build (default: 1).
+  DEVICE_TEST            auto (default), required, or 0. In auto mode an Android
+                         smoke test runs only when exactly one adb device is ready.
 
 Cleanup never removes an NDK outside this repository, including an NDK cached
 under /tmp.
@@ -85,6 +93,14 @@ download_ndk_to_tmp() {
     if [[ -z "$download_url" ]]; then
         download_url="https://dl.google.com/android/repository/$archive_name"
     fi
+    if [[ -z "$NDK_DOWNLOAD_SHA256" ]]; then
+        if [[ "$NDK_VERSION" == "r27d" && -z "$NDK_DOWNLOAD_URL" ]]; then
+            NDK_DOWNLOAD_SHA256="601246087a682d1944e1e16dd85bc6e49560fe8b6d61255be2829178c8ed15d9"
+        else
+            echo "error: NDK_DOWNLOAD_SHA256 is required for this NDK download" >&2
+            return 1
+        fi
+    fi
 
     staging_dir="$(mktemp -d "$NDK_TMP_DIR/extended-android-tools-ndk.XXXXXX")"
     archive_path="$staging_dir/$archive_name"
@@ -92,6 +108,12 @@ download_ndk_to_tmp() {
 
     echo "Downloading Android NDK $NDK_VERSION into temporary storage..."
     if ! curl --fail --location --retry 3 --output "$archive_path" "$download_url"; then
+        rm -rf -- "$staging_dir"
+        return 1
+    fi
+    if ! printf '%s  %s\n' "$NDK_DOWNLOAD_SHA256" "$archive_path" | \
+        sha256sum --check --status; then
+        echo "error: downloaded Android NDK checksum does not match" >&2
         rm -rf -- "$staging_dir"
         return 1
     fi
@@ -141,13 +163,18 @@ for target in "${targets[@]}"; do
     fi
 done
 
-for binary_flag_name in DOWNLOAD_NDK ALLOW_UNSUPPORTED_HOST CLEAN_ALL CLEAN_ONLY; do
+for binary_flag_name in DOWNLOAD_NDK ALLOW_UNSUPPORTED_HOST CLEAN_ALL CLEAN_ONLY VERIFY_ARTIFACTS; do
     binary_flag_value="${!binary_flag_name}"
     if [[ "$binary_flag_value" != "0" && "$binary_flag_value" != "1" ]]; then
         echo "error: $binary_flag_name must be 0 or 1" >&2
         exit 2
     fi
 done
+
+if [[ "$DEVICE_TEST" != "auto" && "$DEVICE_TEST" != "required" && "$DEVICE_TEST" != "0" ]]; then
+    echo "error: DEVICE_TEST must be auto, required, or 0" >&2
+    exit 2
+fi
 
 normalized_clean_modules="${CLEAN_MODULES//,/ }"
 clean_modules=()
@@ -250,6 +277,8 @@ required_commands=(
     pkg-config
     po4a
     python3
+    readelf
+    sha256sum
     texi2any
     unzip
     wget
@@ -280,6 +309,10 @@ if [[ ! "$NDK_VERSION" =~ ^[A-Za-z0-9._-]+$ ]]; then
     echo "error: NDK_VERSION may contain only letters, numbers, dots, underscores, and dashes" >&2
     exit 2
 fi
+if [[ -n "$NDK_DOWNLOAD_SHA256" && ! "$NDK_DOWNLOAD_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "error: NDK_DOWNLOAD_SHA256 must be a lowercase SHA-256 value" >&2
+    exit 2
+fi
 
 android_triple_for_arch() {
     case "$1" in
@@ -289,9 +322,6 @@ android_triple_for_arch() {
     x86_64)
         echo "x86_64-linux-android"
         ;;
-    armv7)
-        echo "armv7a-linux-androideabi"
-        ;;
     *)
         return 1
         ;;
@@ -299,7 +329,7 @@ android_triple_for_arch() {
 }
 
 if ! android_triple_for_arch "$ndk_arch" >/dev/null; then
-    echo "error: NDK_ARCH must be arm64, x86_64, or armv7" >&2
+    echo "error: NDK_ARCH must be arm64 or x86_64" >&2
     exit 2
 fi
 
@@ -426,6 +456,12 @@ if [[ "$build_all" == "1" ]]; then
         "bpftools-x86_64.tar.gz" \
         "bpftools-min-x86_64.tar.gz" \
         "bpftrace-x86_64"
+
+    if [[ "$VERIFY_ARTIFACTS" == "1" ]]; then
+        "$project_root/scripts/verify-artifacts.sh"
+    fi
+    "$project_root/scripts/generate-checksums.sh"
+    DEVICE_TEST="$DEVICE_TEST" "$project_root/scripts/android-smoke-test.sh"
     exit 0
 fi
 

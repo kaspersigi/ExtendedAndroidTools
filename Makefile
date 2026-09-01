@@ -4,7 +4,7 @@
 # option.
 THREADS = 4
 
-# arch: arm64, armv7, or x86_64
+# arch: arm64 or x86_64
 NDK_ARCH = arm64
 
 # Release or Debug
@@ -28,6 +28,10 @@ OUT_DIR = out
 ANDROID_OUT_DIR = $(OUT_DIR)/android/$(NDK_ARCH)
 ANDROID_SYSROOTS_OUT_DIR = $(OUT_DIR)/sysroots/$(NDK_ARCH)
 HOST_OUT_DIR = $(OUT_DIR)/host
+
+# Archive metadata is normalized to the current repository commit time unless
+# the caller supplies a release epoch explicitly.
+SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || echo 0)
 
 HOST_OS = $(shell uname -o)
 HOST_MACHINE = $(shell uname -m)

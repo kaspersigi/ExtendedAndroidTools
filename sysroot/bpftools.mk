@@ -4,8 +4,6 @@ ifeq ($(NDK_ARCH), arm64)
 TARGET_ARCH_ENV_VAR = arm64
 else ifeq ($(NDK_ARCH), x86_64)
 TARGET_ARCH_ENV_VAR = x86
-else ifeq ($(NDK_ARCH), armv7)
-TARGET_ARCH_ENV_VAR = arm
 else
 $(error unknown abi $(NDK_ARCH))
 endif
@@ -30,8 +28,10 @@ bpftools-min: $(BPFTOOLS_MIN_TAR)
 $(BPFTOOLS_TAR): $(BPFTOOLS)
 $(BPFTOOLS_MIN_TAR): $(BPFTOOLS_MIN)
 $(BPFTOOLS_TAR) $(BPFTOOLS_MIN_TAR):
-	tar -zcf $@ $^ --owner=0 --group=0 \
-		--transform="s|^$(ANDROID_SYSROOTS_OUT_DIR)/||"
+	tar --create --file=$@ --use-compress-program='gzip -n' \
+		--sort=name --mtime='@$(SOURCE_DATE_EPOCH)' \
+		--owner=0 --group=0 --numeric-owner \
+		--transform="s|^$(ANDROID_SYSROOTS_OUT_DIR)/||" $^
 
 $(BPFTOOLS) $(BPFTOOLS_MIN): $(ANDROID_SYSROOTS_OUT_DIR)
 $(BPFTOOLS) $(BPFTOOLS_MIN): sysroot/setup.sh
@@ -46,6 +46,7 @@ $(BPFTOOLS) $(BPFTOOLS_MIN): $(ANDROID_OUT_DIR)/lib/libc++_shared.so
 $(BPFTOOLS): $(call project-android-target,python)
 
 $(BPFTOOLS):
+	rm -rf -- "$@"
 	mkdir -p $@/bin
 	cp $(ANDROID_OUT_DIR)/bin/bpftrace $@/bin/
 	cp $(ANDROID_OUT_DIR)/bin/bpftrace-aotrt $@/bin/ || true
@@ -63,6 +64,7 @@ $(BPFTOOLS):
 	cp -a $(ANDROID_OUT_DIR)/lib/libelf*.so* $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/libfl.so $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/liblzma.so $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libzstd.so* $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/libcrypto.so* $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/libssl.so* $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/python3* $@/lib/
@@ -92,6 +94,7 @@ $(BPFTOOLS):
 	touch $@
 
 $(BPFTOOLS_MIN):
+	rm -rf -- "$@"
 	mkdir -p $@/bin
 	cp $(ANDROID_OUT_DIR)/bin/bpftrace $@/bin/
 	cp $(ANDROID_OUT_DIR)/bin/xzcat $@/bin/

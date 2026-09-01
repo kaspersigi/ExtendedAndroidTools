@@ -13,6 +13,7 @@ Extended Android Tools is a set of makefiles and build environment cross compili
 - [libelf (part of elfutils)](https://sourceware.org/elfutils/)
 - [argp (part of gnulib)](https://www.gnu.org/software/gnulib/)
 - [XZ Utils](https://tukaani.org/xz/)
+- [Zstandard](https://github.com/facebook/zstd)
 
 # Build environment
 ## Docker (recommended)
@@ -40,7 +41,7 @@ The provided [Dockerfile](docker/Dockerfile) defines the Ubuntu 26.04 reference 
 THREADS=8 NDK_API=35 ./scripts/run-docker-build-env.sh
 ```
 
-The image name can be overridden for both scripts with `IMAGE_NAME`; the default is `extended-android-tools`. `NDK_VERSION` defaults to `r27d` and must be set to the same value when building and running a customized image. The image platform defaults to `linux/amd64` because the project uses the NDK `linux-x86_64` host toolchain; override it with `DOCKER_PLATFORM` only when a compatible toolchain is provided.
+The image name can be overridden for both scripts with `IMAGE_NAME`; the default is `extended-android-tools`. `NDK_VERSION` defaults to `r27d` and must be set to the same value when building and running a customized image. The r27d download checksum is built in; a custom NDK version must also set `NDK_DOWNLOAD_SHA256`. The image platform defaults to `linux/amd64` because the project uses the NDK `linux-x86_64` host toolchain; override it with `DOCKER_PLATFORM` only when a compatible toolchain is provided.
 
 ## Setting up an Ubuntu 26.04 environment directly
 For builds outside Docker, use the dedicated Ubuntu 26.04 scripts. The dependency script installs the required host packages; the build script selects an existing NDK r27d or downloads it to temporary storage.
@@ -61,7 +62,12 @@ eval `make setup-env`
 python3
 ```
 
-See [scripts/resolute.README](scripts/resolute.README) for configuration, cleanup, NDK selection, and troubleshooting details.
+An `all` build verifies the six release products, writes `out/SHA256SUMS`, and
+runs full, minimal, and standalone-bpftrace device smoke tests only when adb can
+select exactly one authorized arm64 or x86_64 device. With no suitable device,
+the device step is reported as skipped and the local build remains successful.
+
+See [scripts/README.md](scripts/README.md) for configuration, cleanup, NDK selection, and troubleshooting details.
 
 # Sysroots
 When projects are built the resulting binaries/libraries are placed in `bin` and `lib` subdirectories of `out/android/$ARCH/` directory. To run a particular tool on an Android device it needs to be pushed together with all the libraries it depends on to the device. In addition the shell environment needs to be configured appropriately for the runtime loader to be able to locate and load those libraries when the tool is executed. To help automate these steps ExtendedAndroidTools provides helper targets preparing sysroot archives consisting of selected executables and libraries, together with scripts setting up the environment. Those archives can be pushed to a device, extracted, and used without any further setup.
