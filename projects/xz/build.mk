@@ -14,7 +14,7 @@ $(XZ_ANDROID_BUILD_DIR): $(ANDROID_CONFIG_SITE)
 XZ_REPO = https://github.com/tukaani-project/xz.git
 projects/xz/sources:
 ifeq ($(shell whoami), vagrant)
-	git clone $(XZ_REPO) /tmp/xz_sources -b $(XZ_BRANCH_OR_TAG)
+	git clone $(XZ_REPO) /tmp/xz_sources --depth=1 -b $(XZ_BRANCH_OR_TAG)
 	cd /tmp/xz_sources && ./autogen.sh
 	mv /tmp/xz_sources $@
 else

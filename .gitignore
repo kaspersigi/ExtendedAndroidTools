@@ -20,7 +20,7 @@ ubuntu-bionic-18.04-cloudimg-console.log
 # pyre
 .pyre/
 
-# packaged sysroots
+# legacy root-level packaged sysroots (new archives are under /out/)
 /bpftools-*.tar.gz
 
 .flake8

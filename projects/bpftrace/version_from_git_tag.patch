@@ -1,0 +1,30 @@
+diff --git a/cmake/Version.cmake b/cmake/Version.cmake
+--- a/cmake/Version.cmake
++++ b/cmake/Version.cmake
+@@ -19,10 +19,22 @@ execute_process(
+   RESULT_VARIABLE retcode
+ )
+-
++
++# Release tags are the authoritative version. This also keeps the reported
++# version correct when a patch release tag points at sources whose fallback
++# CMake version was not updated.
++execute_process(
++  COMMAND git describe --tags --exact-match HEAD
++  WORKING_DIRECTORY ${bpftrace_SOURCE_DIR}
++  OUTPUT_VARIABLE GIT_EXACT_TAG
++  OUTPUT_STRIP_TRAILING_WHITESPACE
++  RESULT_VARIABLE tag_retcode
++)
++
+ set(BPFTRACE_BASE_VERSION "v${bpftrace_VERSION_MAJOR}.${bpftrace_VERSION_MINOR}.${bpftrace_VERSION_PATCH}")
+-
+-# Append git hash if we're in a git repository
+-if(retcode EQUAL 0)
++
++if(tag_retcode EQUAL 0)
++  set(BPFTRACE_VERSION "${GIT_EXACT_TAG}")
++elseif(retcode EQUAL 0)
+   set(BPFTRACE_VERSION "${BPFTRACE_BASE_VERSION}-${GIT_SHORT_HASH}")
+ else()
+   set(BPFTRACE_VERSION "${BPFTRACE_BASE_VERSION}")

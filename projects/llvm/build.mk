@@ -26,7 +26,25 @@ LLVM_EXTRA_CMAKE_FLAGS += -DLLVM_INCLUDE_BENCHMARKS=OFF
 LLVM_EXTRA_CMAKE_FLAGS += -DLLVM_INCLUDE_EXAMPLES=OFF
 LLVM_EXTRA_HOST_FLAGS = -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN=1
 
+# Dynamic Android tools must share one LLVM instance with libclang-cpp.
+# Otherwise bpftrace and libclang-cpp each embed separate static LLVM registries,
+# and Clang cannot see the BPF target registered by bpftrace.
+LLVM_ANDROID_EXTRA_CMAKE_FLAGS = -DLLVM_BUILD_LLVM_DYLIB=ON
+LLVM_ANDROID_EXTRA_CMAKE_FLAGS += -DLLVM_LINK_LLVM_DYLIB=ON
+LLVM_ANDROID_EXTRA_CMAKE_FLAGS += -DCLANG_LINK_CLANG_DYLIB=ON
+
 ifeq ($(STATIC_LINKING),true)
+LLVM_ANDROID_EXTRA_CMAKE_FLAGS =
+endif
+
+ifeq ($(STATIC_LINKING),true)
+LLVM_EXTRA_CMAKE_FLAGS += -DLIBCLANG_BUILD_STATIC=ON
+endif
+
+# The local bpftrace-static artifact is built alongside the dynamic archives.
+# In that case LLVM must install both libclang.so and libclang.a so both
+# link modes can reuse this one LLVM build.
+ifneq ($(filter bpftrace-static,$(MAKECMDGOALS)),)
 LLVM_EXTRA_CMAKE_FLAGS += -DLIBCLANG_BUILD_STATIC=ON
 endif
 
@@ -53,6 +71,7 @@ $(LLVM_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/clang-tblgen
 	cd $@ && $(CMAKE) $(LLVM_SRCS)/llvm \
 		$(ANDROID_EXTRA_CMAKE_FLAGS) \
 		$(LLVM_EXTRA_CMAKE_FLAGS) \
+		$(LLVM_ANDROID_EXTRA_CMAKE_FLAGS) \
 		-DLLVM_CONFIG_PATH=$(abspath $(HOST_OUT_DIR)/bin/llvm-config) \
 		-DLLVM_TABLEGEN=$(abspath $(HOST_OUT_DIR)/bin/llvm-tblgen) \
 		-DCLANG_TABLEGEN=$(abspath $(HOST_OUT_DIR)/bin/clang-tblgen) \
@@ -65,6 +84,24 @@ $(LLVM_ANDROID_BUILD_DIR): $(HOST_OUT_DIR)/bin/clang-tblgen
 		-DLLVM_ENABLE_LIBXML2=OFF \
 		-DLLVM_TOOL_LLVM_RTDYLD_BUILD=OFF \
 		-DPython3_EXECUTABLE=$(PYTHON_HOST_EXECUTABLE)
+
+# Older incremental build trees may have been configured before
+# LIBCLANG_BUILD_STATIC was enabled. Reconfigure them in place rather than
+# rebuilding LLVM from scratch.
+ifeq ($(BUILD_TYPE), Debug)
+LLVM_STATIC_INSTALL_TARGET = install-libclang_static
+else
+LLVM_STATIC_INSTALL_TARGET = install-libclang_static-stripped
+endif
+
+$(ANDROID_OUT_DIR)/lib/libclang.a: $(LLVM_ANDROID)
+	@if ! test -f $@; then \
+		cd $(LLVM_ANDROID_BUILD_DIR) && \
+		$(CMAKE) -DLIBCLANG_BUILD_STATIC=ON . && \
+		$(MAKE) $(LLVM_STATIC_INSTALL_TARGET) -j $(THREADS) && \
+		touch $(abspath $(LLVM_ANDROID)); \
+	fi
+	test -f $@
 
 # rules building host llvm-tblgen and clang-tblgen binaries necessary to
 # cross compile llvm and clang for Android

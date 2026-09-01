@@ -7,14 +7,16 @@ echo "setting up sysroot installed at $SYSROOT"
 
 # links below are required by bcc python library which opens those libs with
 # dlopen. Not the best solution but a solution
-if [[ ! -e $SYSROOT/lib/libbcc.so.0 ]]; then
-    ln $SYSROOT/lib/libbcc.so -s $SYSROOT/lib/libbcc.so.0
+if [[ -e "$SYSROOT/lib/libbcc.so" && \
+      ! -e "$SYSROOT/lib/libbcc.so.0" && \
+      ! -L "$SYSROOT/lib/libbcc.so.0" ]]; then
+    ln -s "$SYSROOT/lib/libbcc.so" "$SYSROOT/lib/libbcc.so.0"
 fi
-if [[ ! -e $SYSROOT/lib/libc.so.6 ]]; then
-    ln /system/lib64/libc.so -s $SYSROOT/lib/libc.so.6
+if [[ ! -e "$SYSROOT/lib/libc.so.6" && ! -L "$SYSROOT/lib/libc.so.6" ]]; then
+    ln -s /system/lib64/libc.so "$SYSROOT/lib/libc.so.6"
 fi
-if [[ ! -e $SYSROOT/lib/librt.so.1 ]]; then
-    ln /system/lib64/libc.so -s $SYSROOT/lib/librt.so.1
+if [[ ! -e "$SYSROOT/lib/librt.so.1" && ! -L "$SYSROOT/lib/librt.so.1" ]]; then
+    ln -s /system/lib64/libc.so "$SYSROOT/lib/librt.so.1"
 fi
 
 export PATH=$SYSROOT/bin:$PATH

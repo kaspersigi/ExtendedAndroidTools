@@ -10,7 +10,7 @@ set -euo pipefail
 # or override any value from the environment, for example:
 #   THREADS=8 NDK_API=35 NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh
 # -----------------------------------------------------------------------------
-BUILD_TARGET="${BUILD_TARGET:-bpftools}"
+BUILD_TARGET="${BUILD_TARGET:-all}"
 THREADS="${THREADS:-$(nproc)}"
 NDK_API="${NDK_API:-35}"
 NDK_ARCH="${NDK_ARCH:-arm64}"
@@ -33,21 +33,25 @@ usage() {
 Build ExtendedAndroidTools directly on an Ubuntu 26.04 (Resolute) host.
 
 Usage:
-  ./scripts/resolute-local-build.sh [make-target ...]
+  ./scripts/resolute-local-build.sh [target ...]
 
-The default make target is configured by BUILD_TARGET. Positional arguments
-override it. Examples:
+The default target is configured by BUILD_TARGET. The special target "all"
+builds all six release artifacts for arm64 and x86_64. Other positional
+arguments are passed through as Make targets. Examples:
   ./scripts/resolute-local-build.sh
+  ./scripts/resolute-local-build.sh all
   NDK_ARCH=x86_64 NDK_API=35 THREADS=8 ./scripts/resolute-local-build.sh bpftools-min
+  NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftrace-static
   NDK_PATH=/opt/android-ndk-r27d ./scripts/resolute-local-build.sh python
   CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
   CLEAN_ALL=1 CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
 
 Environment variables:
-  BUILD_TARGET           Default make target when no argument is given (bpftools).
+  BUILD_TARGET           Default target when no argument is given (all).
   THREADS                Parallel jobs passed to nested builds (default: nproc).
   NDK_API                Android API level used for compilation (default: 35).
-  NDK_ARCH               arm64 (default), x86_64, or armv7.
+  NDK_ARCH               arm64 (default), x86_64, or armv7 for individual
+                         targets. The special all target builds arm64/x86_64.
   NDK_VERSION            Android NDK release used for auto-download (default: r27d).
   NDK_PATH               Explicit Android NDK path. It takes highest priority.
   PREFERRED_NDK_PATH     Preferred existing NDK path
@@ -116,6 +120,26 @@ fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 project_root="$(cd -- "$script_dir/.." && pwd -P)"
+
+targets=("$@")
+if (( ${#targets[@]} == 0 )); then
+    if [[ -z "$BUILD_TARGET" ]]; then
+        echo "error: BUILD_TARGET must not be empty when no target is provided" >&2
+        exit 2
+    fi
+    targets=("$BUILD_TARGET")
+fi
+
+build_all=0
+for target in "${targets[@]}"; do
+    if [[ "$target" == "all" ]]; then
+        if (( ${#targets[@]} != 1 )); then
+            echo "error: the special target all cannot be combined with other targets" >&2
+            exit 2
+        fi
+        build_all=1
+    fi
+done
 
 for binary_flag_name in DOWNLOAD_NDK ALLOW_UNSUPPORTED_HOST CLEAN_ALL CLEAN_ONLY; do
     binary_flag_value="${!binary_flag_name}"
@@ -256,21 +280,27 @@ if [[ ! "$NDK_VERSION" =~ ^[A-Za-z0-9._-]+$ ]]; then
     exit 2
 fi
 
-case "$ndk_arch" in
+android_triple_for_arch() {
+    case "$1" in
     arm64)
-        android_triple="aarch64-linux-android"
+        echo "aarch64-linux-android"
         ;;
     x86_64)
-        android_triple="x86_64-linux-android"
+        echo "x86_64-linux-android"
         ;;
     armv7)
-        android_triple="armv7a-linux-androideabi"
+        echo "armv7a-linux-androideabi"
         ;;
     *)
-        echo "error: NDK_ARCH must be arm64, x86_64, or armv7" >&2
-        exit 2
+        return 1
         ;;
-esac
+    esac
+}
+
+if ! android_triple_for_arch "$ndk_arch" >/dev/null; then
+    echo "error: NDK_ARCH must be arm64, x86_64, or armv7" >&2
+    exit 2
+fi
 
 if [[ "$build_type" != "Release" && "$build_type" != "Debug" ]]; then
     echo "error: BUILD_TYPE must be Release or Debug" >&2
@@ -304,10 +334,23 @@ else
     ndk_may_be_downloaded=true
 fi
 
-ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_triple}${ndk_api}-clang"
-if [[ ! -x "$ndk_compiler" ]]; then
+compiler_arches=("$ndk_arch")
+if [[ "$build_all" == "1" ]]; then
+    compiler_arches=(arm64 x86_64)
+fi
+
+missing_ndk_compilers=()
+for compiler_arch in "${compiler_arches[@]}"; do
+    compiler_triple="$(android_triple_for_arch "$compiler_arch")"
+    ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/linux-x86_64/bin/${compiler_triple}${ndk_api}-clang"
+    if [[ ! -x "$ndk_compiler" ]]; then
+        missing_ndk_compilers+=("$ndk_compiler")
+    fi
+done
+
+if (( ${#missing_ndk_compilers[@]} != 0 )); then
     if [[ "$ndk_may_be_downloaded" != "true" ]]; then
-        echo "error: selected NDK does not contain the expected compiler: $ndk_compiler" >&2
+        echo "error: selected NDK does not contain the expected compiler: ${missing_ndk_compilers[0]}" >&2
         exit 1
     fi
     if [[ "$DOWNLOAD_NDK" == "0" ]]; then
@@ -326,38 +369,68 @@ if [[ ! -x "$ndk_compiler" ]]; then
     download_ndk_to_tmp
 fi
 
-if [[ ! -x "$ndk_compiler" ]]; then
-    echo "error: expected NDK compiler was not installed: $ndk_compiler" >&2
-    exit 1
-fi
-
-targets=("$@")
-if (( ${#targets[@]} == 0 )); then
-    if [[ -z "$BUILD_TARGET" ]]; then
-        echo "error: BUILD_TARGET must not be empty when no make target is provided" >&2
-        exit 2
+for compiler_arch in "${compiler_arches[@]}"; do
+    compiler_triple="$(android_triple_for_arch "$compiler_arch")"
+    ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/linux-x86_64/bin/${compiler_triple}${ndk_api}-clang"
+    if [[ ! -x "$ndk_compiler" ]]; then
+        echo "error: expected NDK compiler was not installed: $ndk_compiler" >&2
+        exit 1
     fi
-    targets=("$BUILD_TARGET")
-fi
+done
 
 echo "Building ExtendedAndroidTools locally"
 echo "  project:        $project_root"
 echo "  targets:        ${targets[*]}"
 echo "  NDK_PATH:       $ndk_path"
-echo "  NDK_ARCH:       $ndk_arch"
+if [[ "$build_all" == "1" ]]; then
+    echo "  NDK_ARCH:       arm64 x86_64"
+else
+    echo "  NDK_ARCH:       $ndk_arch"
+fi
 echo "  NDK_API:        $ndk_api"
 echo "  NDK_VERSION:    $NDK_VERSION"
 echo "  BUILD_TYPE:     $build_type"
 echo "  THREADS:        $threads"
-echo "  STATIC_LINKING: $static_linking"
-echo "  LLVM_BPF_ONLY:  $llvm_bpf_only"
+if [[ "$build_all" == "1" ]]; then
+    echo "  STATIC_LINKING: managed per artifact"
+    echo "  LLVM_BPF_ONLY:  false (shared full LLVM build)"
+else
+    echo "  STATIC_LINKING: $static_linking"
+    echo "  LLVM_BPF_ONLY:  $llvm_bpf_only"
+fi
+
+make_common_args=(
+    "NDK_PATH=$ndk_path"
+    "NDK_API=$ndk_api"
+    "BUILD_TYPE=$build_type"
+    "THREADS=$threads"
+)
+
+if [[ "$build_all" == "1" ]]; then
+    for artifact_arch in arm64 x86_64; do
+        echo "Building three $artifact_arch artifacts..."
+        make -C "$project_root" \
+            bpftools bpftools-min bpftrace-static \
+            "${make_common_args[@]}" \
+            "NDK_ARCH=$artifact_arch" \
+            "STATIC_LINKING=false" \
+            "LLVM_BPF_ONLY=false"
+    done
+
+    echo "All six artifacts are available under $project_root/out:"
+    printf '  %s\n' \
+        "bpftools-arm64.tar.gz" \
+        "bpftools-min-arm64.tar.gz" \
+        "bpftrace-arm64" \
+        "bpftools-x86_64.tar.gz" \
+        "bpftools-min-x86_64.tar.gz" \
+        "bpftrace-x86_64"
+    exit 0
+fi
 
 exec make -C "$project_root" \
     "${targets[@]}" \
-    "NDK_PATH=$ndk_path" \
+    "${make_common_args[@]}" \
     "NDK_ARCH=$ndk_arch" \
-    "NDK_API=$ndk_api" \
-    "BUILD_TYPE=$build_type" \
-    "THREADS=$threads" \
     "STATIC_LINKING=$static_linking" \
     "LLVM_BPF_ONLY=$llvm_bpf_only"

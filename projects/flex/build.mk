@@ -25,12 +25,16 @@ $(FLEX_HOST_BUILD_DIR):
 FLEX_REPO = https://github.com/westes/flex.git
 projects/flex/sources:
 ifeq ($(shell whoami), vagrant)
-	git clone $(FLEX_REPO) /tmp/flex_sources
-	cd /tmp/flex_sources && git checkout $(FLEX_COMMIT_HASH)
+	git init /tmp/flex_sources
+	git -C /tmp/flex_sources remote add origin $(FLEX_REPO)
+	git -C /tmp/flex_sources fetch --depth=1 --no-tags origin $(FLEX_COMMIT_HASH)
+	git -C /tmp/flex_sources checkout --detach FETCH_HEAD
 	cd /tmp/flex_sources && ./autogen.sh
 	mv /tmp/flex_sources $@
 else
-	git clone $(FLEX_REPO) $@
-	cd $@ && git checkout $(FLEX_COMMIT_HASH)
+	git init $@
+	git -C $@ remote add origin $(FLEX_REPO)
+	git -C $@ fetch --depth=1 --no-tags origin $(FLEX_COMMIT_HASH)
+	git -C $@ checkout --detach FETCH_HEAD
 	cd $@ && autoreconf -i -f
 endif

@@ -8,5 +8,7 @@ $(GNULIB_ANDROID):
 
 GNULIB_REPO = https://git.savannah.gnu.org/git/gnulib.git
 projects/gnulib/sources:
-	git clone $(GNULIB_REPO) $@
-	cd $@ && git checkout --detach $(GNULIB_COMMIT_HASH)
+	git init $@
+	git -C $@ remote add origin $(GNULIB_REPO)
+	git -C $@ fetch --depth=1 --no-tags origin $(GNULIB_COMMIT_HASH)
+	git -C $@ checkout --detach FETCH_HEAD

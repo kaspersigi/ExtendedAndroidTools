@@ -45,6 +45,11 @@ For builds outside Docker, use the dedicated Ubuntu 26.04 scripts. The dependenc
 
 ```
 ./scripts/resolute-install-deps.sh
+
+# Build all six release artifacts for arm64 and x86_64
+./scripts/resolute-local-build.sh all
+
+# Or build one target for the selected NDK_ARCH
 ./scripts/resolute-local-build.sh python
 ./scripts/resolute-local-build.sh bpftools
 
@@ -64,7 +69,7 @@ When projects are built the resulting binaries/libraries are placed in `bin` and
 # see the 'Build environment' section for more details on building
 make bpftools
 
-adb push bpftools-arm64.tar.gz /data/local/tmp
+adb push out/bpftools-arm64.tar.gz /data/local/tmp
 adb shell "cd /data/local/tmp && tar xf bpftools-arm64.tar.gz"
 
 # enjoy new tools

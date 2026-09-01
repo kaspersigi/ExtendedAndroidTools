@@ -14,12 +14,14 @@ GEN_SETUP_SCRIPT = sed -e "s+<TARGET_ARCH_ENV_VAR>+$(TARGET_ARCH_ENV_VAR)+" sysr
 gen-wrapper = sed -e "s+<BIN>+$(1)+" sysroot/wrapper.sh.template > $@/$(1) && chmod +x $@/$(1)
 
 BPFTOOLS = $(ANDROID_SYSROOTS_OUT_DIR)/bpftools
-BPFTOOLS_TAR = bpftools-$(NDK_ARCH).tar.gz
+BPFTOOLS_TAR = $(OUT_DIR)/bpftools-$(NDK_ARCH).tar.gz
 bpftools: $(BPFTOOLS_TAR)
 
 BPFTOOLS_MIN = $(ANDROID_SYSROOTS_OUT_DIR)/bpftools-min
-BPFTOOLS_MIN_TAR = bpftools-min-$(NDK_ARCH).tar.gz
+BPFTOOLS_MIN_TAR = $(OUT_DIR)/bpftools-min-$(NDK_ARCH).tar.gz
 bpftools-min: $(BPFTOOLS_MIN_TAR)
+
+.PHONY: bpftools bpftools-min
 
 $(BPFTOOLS_TAR): $(BPFTOOLS)
 $(BPFTOOLS_MIN_TAR): $(BPFTOOLS_MIN)
@@ -48,12 +50,15 @@ $(BPFTOOLS):
 	cp $(ANDROID_OUT_DIR)/lib/libbcc.so $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/libbcc_bpf.so $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/libbpf.so* $@/lib/
-	cp $(ANDROID_OUT_DIR)/lib/libclang.so $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libLLVM*.so* $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libclang.so* $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libclang-cpp.so* $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/libc++_shared.so $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/libelf*.so* $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/libfl.so $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/liblzma.so $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/python3* $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libpython*.so* $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/libffi.so $@/lib/
 
 	mkdir -p $@/share
@@ -78,7 +83,9 @@ $(BPFTOOLS_MIN):
 	mkdir -p $@/lib
 	cp $(ANDROID_OUT_DIR)/lib/libbcc_bpf.so $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/libbpf.so* $@/lib/
-	cp $(ANDROID_OUT_DIR)/lib/libclang.so $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libLLVM*.so* $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libclang.so* $@/lib/
+	cp -a $(ANDROID_OUT_DIR)/lib/libclang-cpp.so* $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/libc++_shared.so $@/lib/
 	cp -a $(ANDROID_OUT_DIR)/lib/libelf*.so* $@/lib/
 	cp $(ANDROID_OUT_DIR)/lib/liblzma.so $@/lib/

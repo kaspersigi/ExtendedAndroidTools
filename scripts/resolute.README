@@ -46,16 +46,22 @@ cd /mnt/develop/linux/ExtendedAndroidTools
 ./scripts/resolute-install-deps.sh
 ```
 
-执行默认的 arm64、API 35、Release 构建：
+执行默认的 API 35、Release 全产物构建：
 
 ```bash
 ./scripts/resolute-local-build.sh
 ```
 
-默认目标为 `bpftools`。成功后主要产物为：
+默认目标为 `all`。它依次构建 arm64 和 x86_64，每个架构生成完整包、精简包和静态
+`bpftrace`，共六个发布产物：
 
 ```text
-bpftools-arm64.tar.gz
+out/bpftools-arm64.tar.gz
+out/bpftools-min-arm64.tar.gz
+out/bpftrace-arm64
+out/bpftools-x86_64.tar.gz
+out/bpftools-min-x86_64.tar.gz
+out/bpftrace-x86_64
 ```
 
 中间文件和安装输出分别位于：
@@ -72,7 +78,6 @@ projects/*/sources/
 build/
 out/
 projects/*/sources/
-bpftools-*.tar.gz
 ```
 
 因此，正常下载源码和执行构建不会把这些生成产物加入 Git 工作区状态。
@@ -178,12 +183,17 @@ root 用户执行脚本。
 ### 4.2 命令格式
 
 ```bash
-./scripts/resolute-local-build.sh [make-target ...]
+./scripts/resolute-local-build.sh [target ...]
 ```
 
-没有传入 Make 目标时，使用 `BUILD_TARGET`；`BUILD_TARGET` 的默认值为 `bpftools`。
+没有传入目标时，使用 `BUILD_TARGET`；`BUILD_TARGET` 的默认值为 `all`。`all` 是脚本提供
+的特殊目标，会为 arm64 和 x86_64 构建全部六个发布产物：
 
-传入位置参数后，位置参数会覆盖 `BUILD_TARGET`：
+```bash
+./scripts/resolute-local-build.sh all
+```
+
+传入其他位置参数后，位置参数会覆盖 `BUILD_TARGET` 并原样作为 Make 目标传递：
 
 ```bash
 ./scripts/resolute-local-build.sh bpftools-min
@@ -195,6 +205,7 @@ root 用户执行脚本。
 ./scripts/resolute-local-build.sh llvm
 ./scripts/resolute-local-build.sh bcc
 ./scripts/resolute-local-build.sh bpftrace
+./scripts/resolute-local-build.sh bpftrace-static
 ./scripts/resolute-local-build.sh python
 ```
 
@@ -218,7 +229,7 @@ root 用户执行脚本。
 默认值：
 
 ```text
-bpftools
+all
 ```
 
 指定没有位置参数时使用的 Make 目标：
@@ -512,7 +523,34 @@ ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
 
 ## 7. 构建目标与产物
 
-### 7.1 bpftools
+所有发布产物统一写入仓库的 `out/` 目录，不再把压缩包写到仓库根目录。
+
+### 7.1 all
+
+默认的全产物构建：
+
+```bash
+./scripts/resolute-local-build.sh all
+```
+
+该特殊目标对 arm64 和 x86_64 分别执行一次共享构建。同一架构的完整包、精简包和静态
+`bpftrace` 复用 LLVM、BCC 及其他依赖，只为静态 `bpftrace` 保留独立的 CMake 构建目录，
+避免静态与动态链接配置相互覆盖。最终生成：
+
+```text
+out/bpftools-arm64.tar.gz
+out/bpftools-min-arm64.tar.gz
+out/bpftrace-arm64
+out/bpftools-x86_64.tar.gz
+out/bpftools-min-x86_64.tar.gz
+out/bpftrace-x86_64
+```
+
+`all` 不能和其他位置参数组合。它固定使用完整的架构加 BPF LLVM targets，并按产物分别
+处理动态和静态链接；`NDK_ARCH`、`STATIC_LINKING` 和 `LLVM_BPF_ONLY` 不用于改变这六项
+产物集合。
+
+### 7.2 bpftools
 
 默认完整包：
 
@@ -534,12 +572,12 @@ ALLOW_UNSUPPORTED_HOST=1 ./scripts/resolute-local-build.sh
 产物名称由 `NDK_ARCH` 决定：
 
 ```text
-bpftools-arm64.tar.gz
-bpftools-x86_64.tar.gz
-bpftools-armv7.tar.gz
+out/bpftools-arm64.tar.gz
+out/bpftools-x86_64.tar.gz
+out/bpftools-armv7.tar.gz
 ```
 
-### 7.2 bpftools-min
+### 7.3 bpftools-min
 
 精简包：
 
@@ -553,12 +591,25 @@ bpftools-armv7.tar.gz
 产物名称为：
 
 ```text
-bpftools-min-arm64.tar.gz
-bpftools-min-x86_64.tar.gz
-bpftools-min-armv7.tar.gz
+out/bpftools-min-arm64.tar.gz
+out/bpftools-min-x86_64.tar.gz
+out/bpftools-min-armv7.tar.gz
 ```
 
-### 7.3 单独构建模块
+### 7.4 bpftrace-static
+
+只为 `NDK_ARCH` 选择的架构生成一个独立静态二进制：
+
+```bash
+NDK_ARCH=arm64 ./scripts/resolute-local-build.sh bpftrace-static
+NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftrace-static
+```
+
+产物分别为 `out/bpftrace-arm64` 和 `out/bpftrace-x86_64`。该目标使用独立 CMake 目录，
+但会复用相同架构已经安装的 LLVM 和其他依赖；普通 `bpftrace` 目标的动态安装结果不会被
+替换。
+
+### 7.5 单独构建模块
 
 可以传入项目 Makefile 中的模块目标，例如：
 
@@ -570,9 +621,9 @@ bpftools-min-armv7.tar.gz
 ./scripts/resolute-local-build.sh xz
 ```
 
-单独构建模块主要用于开发和定位编译问题，不一定生成最终的 `bpftools-*.tar.gz`。
+单独构建模块主要用于开发和定位编译问题，不一定生成最终的 `out/bpftools-*.tar.gz`。
 
-### 7.4 统一版本管理与逐模块升级
+### 7.6 统一版本管理与逐模块升级
 
 所有可下载组件和主机 Python 包的版本都集中在：
 
@@ -679,7 +730,7 @@ CLEAN_MODULES="llvm bcc" ./scripts/resolute-local-build.sh
 
 1. 删除整个 `build/`；
 2. 删除整个 `out/`；
-3. 删除根目录下的 `bpftools-*.tar.gz`；
+3. 删除旧版本可能留在根目录下的 `bpftools-*.tar.gz`；
 4. 只删除 `CLEAN_MODULES` 指定模块的源码缓存；
 5. 默认继续执行构建。
 
@@ -709,7 +760,6 @@ CLEAN_ALL=1 ./scripts/resolute-local-build.sh
 build/
 out/
 projects/*/sources/
-bpftools-*.tar.gz
 ```
 
 它不会删除仓库外的 NDK，包括：
@@ -826,7 +876,7 @@ CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
 ```
 
 该方式不会删除源码缓存；与 `CLEAN_MODULES` 不同，它也不会主动删除已有
-`bpftools-*.tar.gz`。需要严格清理打包产物时，使用 `CLEAN_MODULES` 或 `CLEAN_ALL`。
+`out/bpftools-*.tar.gz`。需要严格清理打包产物时，使用 `CLEAN_MODULES` 或 `CLEAN_ALL`。
 
 
 ## 10. 参数组合规则
@@ -999,7 +1049,7 @@ test -x /mnt/develop/android-ndk-r27d/toolchains/llvm/prebuilt/linux-x86_64/bin/
 构建后检查产物：
 
 ```bash
-ls -lh bpftools-*.tar.gz
+ls -lh out/bpftools-*.tar.gz out/bpftrace-arm64 out/bpftrace-x86_64
 ```
 
 确认生成文件没有意外进入 Git 状态：
@@ -1065,6 +1115,18 @@ bpftrace（STATIC_LINKING=true、LLVM_BPF_ONLY=true）
 相同的动态构建。因此整个矩阵由原来的 6 个标准 runner job 减少为 4 个：2 个架构的
 完整包/精简包组合 job，加上 2 个架构的静态 bpftrace job。三个产物仍分别上传，上传
 保留期设置为 7 天以降低长期存储占用。
+
+新增的 `bpftrace-static` 目标已经允许未来把同一架构的三个目标合并到一个 job：
+
+```bash
+./scripts/resolute-local-build.sh bpftools bpftools-min bpftrace-static
+```
+
+这样可以让动态包和静态 bpftrace 共用一次完整 LLVM 构建，并把当前 4 个 Android job
+进一步缩减为 2 个架构矩阵 job；六个上传产物仍可保留。不过 arm64 和 x86_64 的 Android
+目标文件不能互相复用，因此这里的“一次”是每个架构一次，而不是两个架构合计一次。
+当前 workflow 为保持既有 CI 构建和上传路径，仅迁移了 tar 文件在工作区内的位置，尚未
+合并动态与静态 job。
 
 workflow 还包含两项免费额度保护：
 
