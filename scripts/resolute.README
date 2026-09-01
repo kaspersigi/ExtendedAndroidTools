@@ -119,6 +119,7 @@ libltdl-dev
 libtool
 make
 patch
+perl
 pkg-config
 po4a
 python3
@@ -130,6 +131,10 @@ xxd
 zlib1g-dev
 zstd
 ```
+
+`perl` is required by the project-built OpenSSL configuration step. OpenSSL
+ships a fallback copy of its required `Text::Template` Perl module, so a
+separate CPAN installation is not required.
 
 该脚本只安装主机软件包，不会：
 
@@ -563,6 +568,8 @@ out/bpftrace-x86_64
 - `bpftrace`；
 - 可用时包含 `bpftrace-aotrt`；
 - `projects/versions.mk` 当前选择的 Python 可执行程序和运行库；
+- 与该 CPython 版本配套的 `pip`/`pip3` 入口；
+- Python HTTPS 所需的 OpenSSL 动态库和 CA 证书包；
 - BCC 与 BPF 相关动态库；
 - `libclang.so`；
 - `libbpf`、`libelf`、`liblzma`、`libffi` 等运行库；
@@ -658,7 +665,9 @@ CLEAN_MODULES=python CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
 
 将 `python` 替换为 `ffi`、`xz`、`elfutils`、`bcc` 或其他项目名即可。模块使用 Git
 提交而不是 release tag 时，也只在 `projects/versions.mk` 更新提交哈希。LLVM 同样在该文件
-声明，但当前项目明确固定为 `llvmorg-21.1.8`。
+声明，但当前项目明确固定为 `llvmorg-21.1.8`。OpenSSL 的 LTS 版本和 CPython 内置的
+pip wheel 版本也分别由 `OPENSSL_VERSION`、`PIP_VERSION` 统一声明；升级 Python 时应同步
+确认源码树 `Lib/ensurepip/_bundled/` 中的 pip wheel 文件名并更新 `PIP_VERSION`。
 
 不同 `NDK_ARCH` 的 `python.xinstall` 分别生成在：
 
@@ -668,6 +677,72 @@ build/android/<NDK_ARCH>/python.xinstall
 
 因此依次构建 arm64 和 x86_64 时，不会让后一个架构的 BCC Python 安装误用前一个架构的
 `site-packages` 路径。
+
+### 7.7 Android 上使用 HTTPS 和 pip
+
+HTTPS 和 pip 只包含在完整 `bpftools` 包中。构建并部署：
+
+```bash
+./scripts/resolute-local-build.sh bpftools
+adb push out/bpftools-arm64.tar.gz /data/local/tmp/
+adb shell 'cd /data/local/tmp && tar -xzf bpftools-arm64.tar.gz'
+```
+
+检查 Python、OpenSSL 和 pip：
+
+```bash
+adb shell /data/local/tmp/bpftools/python3 \
+    -c 'import ssl; print(ssl.OPENSSL_VERSION)'
+adb shell /data/local/tmp/bpftools/pip3 --version
+```
+
+直接安装到完整包自己的 `site-packages`：
+
+```bash
+adb shell /data/local/tmp/bpftools/pip3 install requests rich
+```
+
+也可以安装到独立目录，避免修改已经解压的工具包：
+
+```bash
+adb shell 'mkdir -p /data/local/tmp/python-packages && \
+    /data/local/tmp/bpftools/pip3 install \
+        --target /data/local/tmp/python-packages requests rich'
+
+adb shell 'PYTHONPATH=/data/local/tmp/python-packages \
+    /data/local/tmp/bpftools/python3 -c "import requests, rich"'
+```
+
+运行包装脚本时会自动设置包内动态库路径、OpenSSL provider 路径和 CA 证书文件。
+调用者已经设置 `SSL_CERT_FILE` 或 `OPENSSL_MODULES` 时，脚本保留调用者的配置。
+
+pip 可以安装纯 Python wheel，以及 PyPI 上与当前 Python ABI、Android API 和 CPU 架构
+兼容的 Android wheel。只有原生源码包、只有普通 Linux wheel 的包，仍可能因为缺少
+Android wheel、编译器、头文件或目标库而无法在设备上现场构建。Android root shell 中
+运行 pip 时出现 root 用户警告属于 pip 的通用提示；希望隔离安装内容时优先使用
+`--target`。
+
+### 7.8 LLVM 配置签名与缓存复用
+
+每个 Android 架构的 LLVM 构建目录都有一份自动生成的配置签名：
+
+```text
+build/android/<NDK_ARCH>/llvm.config
+```
+
+签名记录 LLVM tag 和实际源码提交、NDK 路径和版本、API、架构、CMake 版本、构建类型、
+`STATIC_LINKING`、`LLVM_BPF_ONLY`、LLVM targets、动态库选项以及相关构建规则的哈希。
+该文件位于已被 `.gitignore` 排除的 `build/` 目录，不会修改 Git 工作树。
+
+每次构建都会重新计算签名，但内容相同时不会更新时间戳，也不会重新配置或编译 LLVM。
+配置发生变化时，构建会打印新旧字段差异，自动在原目录重新运行 CMake，并通过更新后的
+`llvm.done` 触发 BCC、bpftrace 等下游模块按需重新配置和链接。例如从
+`STATIC_LINKING=true` 切回动态完整包时，不再需要为了恢复 `libLLVM.so` 手动清理 LLVM
+缓存。
+
+该机制不会删除 LLVM 源码或 host LLVM。切换 `LLVM_BRANCH_OR_TAG` 时仍应使用
+`CLEAN_MODULES=llvm` 重新获取对应源码；配置签名解决的是同一份源码构建目录被不兼容
+CMake 参数复用的问题。
 
 
 ## 8. 清理功能

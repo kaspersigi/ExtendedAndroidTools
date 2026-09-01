@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-PYTHON_ANDROID_DEPS = ffi xz
+PYTHON_ANDROID_DEPS = ffi openssl xz
 PYTHON_HOST_DEPS = ffi
 $(eval $(call project-define,python))
 
@@ -9,6 +9,8 @@ PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS = --build=$(PYTHON_BUILD_TRIPLE) --without-e
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --with-build-python=$(PYTHON_HOST_EXECUTABLE)
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --enable-shared
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --without-static-libpython
+PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --with-openssl=$(abspath $(ANDROID_OUT_DIR))
+PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --with-openssl-rpath=no
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += "EXTRA_CPPFLAGS=-I$(ANDROID_SYSROOT_INCLUDE_PATH)"
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += "EXTRA_LDFLAGS=-L$(ANDROID_SYSROOT_LIB_PATH)"
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += ac_cv_file__dev_ptmx=no
@@ -18,7 +20,19 @@ $(PYTHON_ANDROID):
 	$(RM) $(ANDROID_OUT_DIR)/lib/libpython$(PYTHON_ABI_VERSION).a
 	cd $(PYTHON_ANDROID_BUILD_DIR) && make -j $(THREADS)
 	cd $(PYTHON_ANDROID_BUILD_DIR) && make install
+	test -f $(PYTHON_BUNDLED_PIP_WHEEL)
+	$(RM) -r $(PYTHON_ANDROID_SITE_PACKAGES)/pip
+	$(RM) -r $(PYTHON_ANDROID_SITE_PACKAGES)/pip-*.dist-info
+	mkdir -p $(PYTHON_ANDROID_SITE_PACKAGES)
+	unzip -q $(PYTHON_BUNDLED_PIP_WHEEL) -d $(PYTHON_ANDROID_SITE_PACKAGES)
+	mkdir -p $(ANDROID_OUT_DIR)/share/certs
+	unzip -p $(PYTHON_BUNDLED_PIP_WHEEL) \
+		pip/_vendor/certifi/cacert.pem > \
+		$(ANDROID_OUT_DIR)/share/certs/cacert.pem
 	cp $(PYTHON_SRCS)/LICENSE $(ANDROID_OUT_DIR)/licenses/python
+	unzip -p $(PYTHON_BUNDLED_PIP_WHEEL) \
+		pip-$(PIP_VERSION).dist-info/licenses/LICENSE.txt > \
+		$(ANDROID_OUT_DIR)/licenses/pip
 	touch $@
 
 $(PYTHON_HOST):

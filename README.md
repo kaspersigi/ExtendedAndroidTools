@@ -6,6 +6,8 @@ Extended Android Tools is a set of makefiles and build environment cross compili
 - [bcc](https://github.com/iovisor/bcc)
 - [llvm & clang](https://github.com/llvm/llvm-project)
 - [python](https://github.com/python/cpython)
+- [pip](https://pip.pypa.io/)
+- [OpenSSL](https://openssl-library.org/)
 - [libffi](https://github.com/libffi/libffi)
 - [flex](https://github.com/westes/flex)
 - [libelf (part of elfutils)](https://sourceware.org/elfutils/)
@@ -74,7 +76,17 @@ adb shell "cd /data/local/tmp && tar xf bpftools-arm64.tar.gz"
 
 # enjoy new tools
 adb shell /data/local/tmp/bpftools/bpftrace -e 'uprobe:/system/lib64/libc.so:malloc { @ = hist(arg0); }'
+
+# Python HTTPS and pip use the packaged OpenSSL and CA bundle
+adb shell /data/local/tmp/bpftools/python3 -c 'import ssl; print(ssl.OPENSSL_VERSION)'
+adb shell /data/local/tmp/bpftools/pip3 install --target /data/local/tmp/python-packages rich
 ```
+
+The full `bpftools` archive includes pip and HTTPS support. Pure-Python wheels
+can be installed directly on the device. Packages that publish compatible
+Android wheels can also work; packages available only as native source
+distributions still require their own Android cross-compilation environment
+and are outside the scope of the runtime archive.
 
 # Android device requirements
 Some of the tools require root privileges to run. In addition BPF tools require Linux kernel to provide BPF capabilities: BPF, Kprobes and Uprobes. Most of Android kernels are based on Linux versions that are either too old, or have some or all of the necessary features disabled. The most straigtforward way to access Android environment providing root access and some BPF capabilities (BPF + Uprobes) is to use API 30 Android emulator **without** Google Play Store. To read more on preparing other devices see [dedicated documentation](docs/phone_setup.md).

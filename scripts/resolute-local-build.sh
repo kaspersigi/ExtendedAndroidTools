@@ -246,6 +246,7 @@ required_commands=(
     help2man
     libtoolize
     make
+    perl
     pkg-config
     po4a
     python3

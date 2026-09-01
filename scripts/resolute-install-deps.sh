@@ -67,6 +67,7 @@ packages=(
     libtool
     make
     patch
+    perl
     pkg-config
     po4a
     python3

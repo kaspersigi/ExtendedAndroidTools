@@ -22,6 +22,18 @@ fi
 export PATH=$SYSROOT/bin:$PATH
 export LD_LIBRARY_PATH=$SYSROOT/lib:$SYSROOT/lib64:$LD_LIBRARY_PATH
 
+# Use the CA bundle shipped with pip for Python's standard HTTPS clients as
+# well. Respect an explicit caller override.
+if [[ -z "${SSL_CERT_FILE:-}" && -f "$SYSROOT/share/certs/cacert.pem" ]]; then
+    export SSL_CERT_FILE="$SYSROOT/share/certs/cacert.pem"
+fi
+
+# OpenSSL provider modules are optional, but make them relocatable when the
+# selected OpenSSL build installs any.
+if [[ -z "${OPENSSL_MODULES:-}" && -d "$SYSROOT/lib/ossl-modules" ]]; then
+    export OPENSSL_MODULES="$SYSROOT/lib/ossl-modules"
+fi
+
 # define environment variables bpftrace and bcc need to determine arch and
 # kernel source path
 export ARCH="<TARGET_ARCH_ENV_VAR>"

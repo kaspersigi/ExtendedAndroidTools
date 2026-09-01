@@ -1,0 +1,17 @@
+OpenSSL
+
+Home page: https://openssl-library.org/
+
+license: Apache License 2.0
+license url: https://github.com/openssl/openssl/blob/master/LICENSE.txt
+
+The selected LTS release is defined in `projects/versions.mk`.
+
+Building:
+- Android is configured with the architecture-specific OpenSSL target.
+- `ANDROID_NDK_ROOT` and the NDK toolchain `PATH` are set for both configure
+  and build steps, as required by OpenSSL's `NOTES-ANDROID.md`.
+- Shared libraries are built because CPython's `_ssl` and `_hashlib` extension
+  modules load them from the packaged sysroot at runtime.
+- Command-line applications and documentation are omitted from the Android
+  build because this project consumes the libraries only.

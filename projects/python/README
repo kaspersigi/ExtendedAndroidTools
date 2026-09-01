@@ -5,10 +5,17 @@ license: PSFv2
 license url: https://github.com/python/cpython/blob/main/LICENSE
 
 The selected CPython release and its derived ABI version are defined once in
-projects/versions.mk.
+projects/versions.mk. The bundled pip wheel version used for Android packaging
+is also declared there so a CPython update cannot silently select a different
+wheel in a build rule.
 
 Building:
 - configure scripts need explicit build and target environments
   (--build, --host, and --with-build-python)
 - PKG_CONFIG_LIBDIR needs to be exported so that it is visible in processes
   spawned by the configure script
+- Android Python depends on the project-built OpenSSL libraries so `_ssl` and
+  `_hashlib` are available.
+- Cross-compiled `ensurepip` cannot execute the Android interpreter on the
+  build host. Instead, the matching wheel already bundled by CPython is
+  installed directly into the Android `site-packages` tree.

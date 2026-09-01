@@ -1,0 +1,5 @@
+#!/system/bin/env sh
+# SPDX-License-Identifier: Apache-2.0
+
+SYSROOT=$(realpath "$(dirname "$0")")
+exec "${SYSROOT}/run.sh" "<PYTHON_BINARY>" -m "<PYTHON_MODULE>" "$@"
