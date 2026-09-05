@@ -2,7 +2,20 @@
 
 Notable changes to this independently maintained fork are recorded here.
 
-## Unreleased
+## v2.0.1
+
+### Changed
+
+- Updated Gnulib to upstream commit
+  `331c8d065a8a753de71f084f068473ccd5e4c34a`.
+- Branch pushes and pull requests now run formatting and JDWP checks without
+  building Android release artifacts.
+- Tag releases reuse the same checks and require them to pass before the
+  arm64/x86_64 build and publication jobs can run.
+- Limited CI native builds to two parallel jobs on Ubuntu 26.04 and removed
+  the duplicate branch-triggered Android build workflow.
+
+## v2.0.0
 
 ### Added
 

@@ -1,6 +1,18 @@
 name: Lint Codebase
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: black-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: read
 
 jobs:
   lint_codebase:
@@ -9,6 +21,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: psf/black@87928e6d6761a4a6d22250e1fee5601b3998086e # 26.5.1
         with:
           version: "26.5.1"

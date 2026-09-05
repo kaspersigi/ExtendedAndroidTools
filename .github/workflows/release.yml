@@ -9,13 +9,26 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 env:
   NDK_API: "35"
   NDK_VERSION: r27d
+  THREADS: "2"
 
 jobs:
+  lint:
+    name: Check formatting
+    uses: ./.github/workflows/black.yml
+
+  jdwp:
+    name: Check JDWP
+    uses: ./.github/workflows/jdwp.yml
+
   build:
     name: Build release (${{ matrix.arch }})
+    needs: [lint, jdwp]
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -26,6 +39,8 @@ jobs:
           - x86_64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Cache Android NDK
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:

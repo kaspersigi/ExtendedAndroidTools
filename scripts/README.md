@@ -1215,8 +1215,24 @@ git status --short
 
 ## 13. GitHub Actions 构建环境
 
-Android 工具包自动构建由 `.github/workflows/bpftools.yml` 负责。该 workflow 与本文档
-描述的本地构建环境保持一致：
+普通提交检查与 tag 发布分开触发：
+
+- 分支 push 和 Pull Request：运行 `black.yml` 的 Python 格式检查，以及 `jdwp.yml`
+  的 JDWP 测试、类型检查和格式检查；不构建 Android 发布产物，也不创建 Release。
+- 推送 `v*` tag：由 `release.yml` 通过 `workflow_call` 复用上述两个检查 workflow；
+  两项检查均成功后，才开始双架构 Android 编译、产物验收和 Release 发布。
+- 其他 tag 不触发这些 workflow。检查 workflow 的直接 push 事件只匹配分支，避免
+  `v*` tag 在发布流程之外再重复启动检查。
+
+JDWP 检查使用 `make THREADS=2 jdwp-check`，仍会准备测试需要的 Buck2、宿主 Python
+和 Python 包，但不编译 Android LLVM/bpftrace。普通提交没有路径过滤，因此文档提交
+也会运行检查；同一分支或 PR 的新提交会取消旧检查，tag 发布不会被自动取消。
+
+`release.yml` 的 `build` job 通过 `needs: [lint, jdwp]` 等待检查，`publish` job 通过
+`needs: build` 等待两个架构均构建成功。任一检查或构建失败，后续编译或发布就会跳过。
+原先在普通 push/PR 中构建 Android 工具包的 `bpftools.yml` 已移除，避免重复编译。
+
+发布环境与本文档描述的本地构建环境保持一致：
 
 - GitHub runner：`ubuntu-26.04`；
 - Android API：35；
@@ -1224,16 +1240,14 @@ Android 工具包自动构建由 `.github/workflows/bpftools.yml` 负责。该 w
 - 构建入口：`scripts/resolute-local-build.sh`；
 - 依赖安装入口：`scripts/resolute-install-deps.sh`；
 - 架构矩阵：arm64 和 x86_64；
-- 并行线程数：不在 workflow 中写死，由脚本使用 `nproc` 自动匹配 runner CPU 数量。
+- 并行线程数：每个编译 job 固定 `THREADS=2`；两个架构使用独立 runner，矩阵可以并行。
 
-workflow 保留六个独立上传产物：arm64/x86_64 各自的完整包、精简包和静态
+Release 保留六个独立产品文件：arm64/x86_64 各自的完整包、精简包和静态
 `bpftrace`，没有通过减少目标或架构来换取构建速度。
 
-当前配置面向 GitHub 免费标准 runner，不使用需要额外付费的 larger runner。公开仓库的
-标准 Linux runner 当前提供 4 个 CPU，标准 runner 用量免费且不限分钟数，因此 `nproc`
-会自动使用 4 个构建线程。私有仓库的标准 Linux runner 当前提供 2 个 CPU，并消耗账户的
-免费分钟额度。最终以 job 中实际的 `nproc` 结果为准；把 `THREADS` 人为设置为大于
-runner CPU 数量不会增加可用 CPU，也通常不能缩短 LLVM 构建时间。
+当前配置使用标准 runner，不使用需要额外付费的 larger runner。`THREADS=2` 限制的是
+每个 job 的构建并行度，不改变 runner 的 CPU 配额；本地脚本仍默认使用 `nproc`，直接
+调用 Make 时仍默认使用 4，不受 CI 设置影响。
 
 截至 2026 年 9 月，GitHub 官方仍将 `ubuntu-26.04` 标记为 Public Preview，而不是 GA
 镜像；预览期可能出现镜像变化、暂时不稳定或排队问题。该状态不影响本地 Resolute 构建，
@@ -1264,23 +1278,12 @@ bpftrace-static
 完整包、精简包和静态 bpftrace 因而共用同一架构的一套完整 LLVM、BCC 和其他依赖，
 Android 矩阵只需要 arm64、x86_64 两个 job。CI 的两个矩阵 job 是隔离环境，因此每个
 job 各构建一次宿主 LLVM 和对应架构的 Android LLVM；本地 `all` 构建则让两个架构共享
-同一套宿主 LLVM 工具。workflow 仍包含三个 `upload-artifact` 步骤，矩阵
-展开后保持六个独立上传产物；每个上传内容同时附带该架构的 SHA-256 清单，保留期为
-7 天。
+同一套宿主 LLVM 工具。每个矩阵 job 上传一个中转 artifact，包含该架构的三个产品文件
+和 SHA-256 清单，保留期为 1 天。发布 job 下载并校验这两份 artifact，再合并清单。
 
 构建完成后 CI 会先运行 `verify-artifacts.sh`，确认压缩包结构、包内所有 ELF 的架构和
 共享库依赖闭包、Python TLS/pip 内容，以及静态 bpftrace 不依赖打包的
 LLVM/Clang/BCC 动态库，验证通过才允许上传。
 
-推送 `v*` tag 时，`.github/workflows/release.yml` 使用同样的双架构构建和验收流程，发布
-六个产品文件及一个合并的 `SHA256SUMS` 到 GitHub Release。`CHANGELOG.md` 记录面向发布
-用户的重要变化。
-
-workflow 还包含两项免费额度保护：
-
-- 同一分支或 Pull Request 有新提交时，自动取消仍在运行的旧构建；
-- 只有构建相关的 Makefile、项目、工具链、sysroot、Resolute 脚本或 workflow 本身发生
-  变化时才触发，纯 README/文档修改不会启动耗时的 Android 全量构建。
-
-`black.yml` 和 `jdwp.yml` 不参与 Android LLVM/bpftrace 构建，因此可以独立选择 runner
-版本；它们不影响 `bpftools.yml` 的 Ubuntu 26.04、API 35 构建结果。
+最终 GitHub Release 包含六个产品文件及一个合并的 `SHA256SUMS`。
+`CHANGELOG.md` 记录面向发布用户的重要变化。

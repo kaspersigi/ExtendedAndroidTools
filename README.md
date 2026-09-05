@@ -69,6 +69,20 @@ the device step is reported as skipped and the local build remains successful.
 
 See [scripts/README.md](scripts/README.md) for configuration, cleanup, NDK selection, and troubleshooting details.
 
+## GitHub Actions
+
+Branch pushes and pull requests run Black formatting checks and the JDWP test,
+type-check, and format-check suite. JDWP prepares its required host tools, but
+these checks do not build Android release artifacts or publish a Release.
+
+Pushing a `v*` tag runs the same checks first. Only after both checks pass does
+the release workflow build and verify the arm64 and x86_64 artifacts, then
+publish all six product files and `SHA256SUMS` to GitHub Releases. All jobs use
+Ubuntu 26.04; native builds use `THREADS=2` per job.
+
+See [the CI documentation](scripts/README.md#13-github-actions-构建环境) for the
+workflow dependencies, artifacts, and caching policy.
+
 # Sysroots
 When projects are built the resulting binaries/libraries are placed in `bin` and `lib` subdirectories of `out/android/$ARCH/` directory. To run a particular tool on an Android device it needs to be pushed together with all the libraries it depends on to the device. In addition the shell environment needs to be configured appropriately for the runtime loader to be able to locate and load those libraries when the tool is executed. To help automate these steps ExtendedAndroidTools provides helper targets preparing sysroot archives consisting of selected executables and libraries, together with scripts setting up the environment. Those archives can be pushed to a device, extracted, and used without any further setup.
 

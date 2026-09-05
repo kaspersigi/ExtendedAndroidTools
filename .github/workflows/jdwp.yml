@@ -1,6 +1,18 @@
-name: Build jdwp project
+name: Check JDWP project
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: jdwp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: read
 
 jobs:
   build_jdwp_project:
@@ -11,10 +23,11 @@ jobs:
     - name: Checkout repository and submodules
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
-         submodules: recursive
+        persist-credentials: false
+        submodules: recursive
     - name: Install Ubuntu 26.04 build dependencies
       run: ./scripts/resolute-install-deps.sh
-    - name: Build, test, type-check, and format-check
+    - name: Test, type-check, and format-check JDWP
       # Keep host package installs serialized; recursive native builds still
-      # use every runner CPU through THREADS.
-      run: make THREADS="$(nproc)" jdwp-check
+      # prepare the tools needed by these checks, with at most two build jobs.
+      run: make THREADS=2 jdwp-check
