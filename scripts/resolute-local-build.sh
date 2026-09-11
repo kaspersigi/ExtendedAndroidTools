@@ -3,6 +3,11 @@
 
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+project_root="$(cd -- "$script_dir/.." && pwd -P)"
+# shellcheck source=scripts/ndk-config.sh
+source "$script_dir/ndk-config.sh"
+
 # -----------------------------------------------------------------------------
 # Build configuration
 #
@@ -12,14 +17,10 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 BUILD_TARGET="${BUILD_TARGET:-all}"
 THREADS="${THREADS:-$(nproc)}"
-NDK_API="${NDK_API:-35}"
 NDK_ARCH="${NDK_ARCH:-arm64}"
-NDK_VERSION="${NDK_VERSION:-r27d}"
 NDK_PATH="${NDK_PATH:-}"
 PREFERRED_NDK_PATH="${PREFERRED_NDK_PATH:-/mnt/develop/android-ndk-$NDK_VERSION}"
 NDK_TMP_DIR="${NDK_TMP_DIR:-/tmp}"
-NDK_DOWNLOAD_URL="${NDK_DOWNLOAD_URL:-}"
-NDK_DOWNLOAD_SHA256="${NDK_DOWNLOAD_SHA256:-}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 STATIC_LINKING="${STATIC_LINKING:-false}"
 LLVM_BPF_ONLY="${LLVM_BPF_ONLY:-false}"
@@ -32,7 +33,7 @@ VERIFY_ARTIFACTS="${VERIFY_ARTIFACTS:-1}"
 DEVICE_TEST="${DEVICE_TEST:-auto}"
 
 usage() {
-    cat <<'EOF'
+    cat <<EOF
 Build ExtendedAndroidTools directly on an Ubuntu 26.04 (Resolute) host.
 
 Usage:
@@ -45,24 +46,25 @@ arguments are passed through as Make targets. Examples:
   ./scripts/resolute-local-build.sh all
   NDK_ARCH=x86_64 NDK_API=35 THREADS=8 ./scripts/resolute-local-build.sh bpftools-min
   NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftrace-static
-  NDK_PATH=/opt/android-ndk-r27d ./scripts/resolute-local-build.sh python
+  NDK_PATH=/opt/android-ndk-$NDK_VERSION ./scripts/resolute-local-build.sh python
   CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
   CLEAN_ALL=1 CLEAN_ONLY=1 ./scripts/resolute-local-build.sh
 
 Environment variables:
   BUILD_TARGET           Default target when no argument is given (all).
   THREADS                Parallel jobs passed to nested builds (default: nproc).
-  NDK_API                Android API level used for compilation (default: 35).
+  NDK_API                Android API level used for compilation (default: $NDK_API).
   NDK_ARCH               arm64 (default) or x86_64. The special all target
                          builds both supported architectures.
-  NDK_VERSION            Android NDK release used for auto-download (default: r27d).
+  NDK_VERSION            Configured in projects/versions.mk (currently $NDK_VERSION).
   NDK_PATH               Explicit Android NDK path. It takes highest priority.
   PREFERRED_NDK_PATH     Preferred existing NDK path
-                         (default: /mnt/develop/android-ndk-r27d).
+                         (default: /mnt/develop/android-ndk-$NDK_VERSION).
   NDK_TMP_DIR            Auto-download parent directory (default: /tmp).
   NDK_DOWNLOAD_URL       Optional complete URL overriding the Google NDK URL.
-  NDK_DOWNLOAD_SHA256    SHA-256 for an automatically downloaded NDK. The r27d
-                         Linux checksum is built in; other downloads must set it.
+  NDK_DOWNLOAD_SHA256    SHA-256 for an automatically downloaded NDK. The $NDK_VERSION
+                         Linux x86_64 checksum comes from projects/versions.mk;
+                         custom downloads must supply their own checksum.
   BUILD_TYPE             Release (default) or Debug.
   STATIC_LINKING         true or false (default: false).
   LLVM_BPF_ONLY          true or false (default: false).
@@ -85,29 +87,18 @@ EOF
 
 download_ndk_to_tmp() {
     local archive_name="android-ndk-${NDK_VERSION}-linux.zip"
-    local download_url="$NDK_DOWNLOAD_URL"
     local staging_dir
     local archive_path
     local extracted_ndk
 
-    if [[ -z "$download_url" ]]; then
-        download_url="https://dl.google.com/android/repository/$archive_name"
-    fi
-    if [[ -z "$NDK_DOWNLOAD_SHA256" ]]; then
-        if [[ "$NDK_VERSION" == "r27d" && -z "$NDK_DOWNLOAD_URL" ]]; then
-            NDK_DOWNLOAD_SHA256="601246087a682d1944e1e16dd85bc6e49560fe8b6d61255be2829178c8ed15d9"
-        else
-            echo "error: NDK_DOWNLOAD_SHA256 is required for this NDK download" >&2
-            return 1
-        fi
-    fi
+    ndk_download_defaults "$NDK_HOST_TAG"
 
     staging_dir="$(mktemp -d "$NDK_TMP_DIR/extended-android-tools-ndk.XXXXXX")"
     archive_path="$staging_dir/$archive_name"
     extracted_ndk="$staging_dir/android-ndk-$NDK_VERSION"
 
     echo "Downloading Android NDK $NDK_VERSION into temporary storage..."
-    if ! curl --fail --location --retry 3 --output "$archive_path" "$download_url"; then
+    if ! curl --fail --location --retry 3 --output "$archive_path" "$NDK_DOWNLOAD_URL"; then
         rm -rf -- "$staging_dir"
         return 1
     fi
@@ -128,6 +119,13 @@ download_ndk_to_tmp() {
         return 1
     fi
 
+    if ! ndk_validate_revision "$extracted_ndk" || \
+       [[ ! -x "$extracted_ndk/toolchains/llvm/prebuilt/$NDK_HOST_TAG/bin/clang" ]]; then
+        echo "error: downloaded archive is not the expected $NDK_HOST_TAG NDK" >&2
+        rm -rf -- "$staging_dir"
+        return 1
+    fi
+
     if ! mv "$extracted_ndk" "$NDK_TMP_DIR/android-ndk-$NDK_VERSION"; then
         rm -rf -- "$staging_dir"
         return 1
@@ -139,9 +137,6 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     usage
     exit 0
 fi
-
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-project_root="$(cd -- "$script_dir/.." && pwd -P)"
 
 targets=("$@")
 if (( ${#targets[@]} == 0 )); then
@@ -257,10 +252,7 @@ if [[ "$ALLOW_UNSUPPORTED_HOST" != "1" ]] && \
     exit 1
 fi
 
-if [[ "$(uname -m)" != "x86_64" ]]; then
-    echo "error: the current build files require the NDK linux-x86_64 host toolchain" >&2
-    exit 1
-fi
+NDK_HOST_TAG="$(ndk_host_tag)"
 
 required_commands=(
     autoreconf
@@ -373,7 +365,7 @@ fi
 missing_ndk_compilers=()
 for compiler_arch in "${compiler_arches[@]}"; do
     compiler_triple="$(android_triple_for_arch "$compiler_arch")"
-    ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/linux-x86_64/bin/${compiler_triple}${ndk_api}-clang"
+    ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/$NDK_HOST_TAG/bin/${compiler_triple}${ndk_api}-clang"
     if [[ ! -x "$ndk_compiler" ]]; then
         missing_ndk_compilers+=("$ndk_compiler")
     fi
@@ -402,12 +394,16 @@ fi
 
 for compiler_arch in "${compiler_arches[@]}"; do
     compiler_triple="$(android_triple_for_arch "$compiler_arch")"
-    ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/linux-x86_64/bin/${compiler_triple}${ndk_api}-clang"
+    ndk_compiler="$ndk_path/toolchains/llvm/prebuilt/$NDK_HOST_TAG/bin/${compiler_triple}${ndk_api}-clang"
     if [[ ! -x "$ndk_compiler" ]]; then
         echo "error: expected NDK compiler was not installed: $ndk_compiler" >&2
         exit 1
     fi
 done
+
+ndk_validate_revision "$ndk_path"
+# Executability alone does not detect the wrong host binary or a missing loader.
+"$ndk_compiler" --version >/dev/null
 
 echo "Building ExtendedAndroidTools locally"
 echo "  project:        $project_root"
@@ -419,7 +415,8 @@ else
     echo "  NDK_ARCH:       $ndk_arch"
 fi
 echo "  NDK_API:        $ndk_api"
-echo "  NDK_VERSION:    $NDK_VERSION"
+echo "  NDK_VERSION:    $NDK_VERSION ($NDK_REVISION)"
+echo "  NDK_HOST_TAG:   $NDK_HOST_TAG"
 echo "  BUILD_TYPE:     $build_type"
 echo "  THREADS:        $threads"
 if [[ "$build_all" == "1" ]]; then
@@ -432,6 +429,7 @@ fi
 
 make_common_args=(
     "NDK_PATH=$ndk_path"
+    "NDK_HOST_TAG=$NDK_HOST_TAG"
     "NDK_API=$ndk_api"
     "BUILD_TYPE=$build_type"
     "THREADS=$threads"

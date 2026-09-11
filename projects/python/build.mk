@@ -4,7 +4,7 @@ PYTHON_ANDROID_DEPS = ffi openssl xz zstd
 PYTHON_HOST_DEPS = ffi
 $(eval $(call project-define,python))
 
-PYTHON_BUILD_TRIPLE := x86_64-pc-linux-gnu
+PYTHON_BUILD_TRIPLE = $(shell $(PYTHON_SRCS)/config.guess)
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS = --build=$(PYTHON_BUILD_TRIPLE) --without-ensurepip
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --with-build-python=$(PYTHON_HOST_EXECUTABLE)
 PYTHON_ANDROID_EXTRA_CONFIG_OPTIONS += --enable-shared

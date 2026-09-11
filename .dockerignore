@@ -1,0 +1,11 @@
+**
+!docker/
+docker/**
+!docker/Dockerfile
+!projects/
+projects/**
+!projects/versions.mk
+!scripts/
+scripts/**
+!scripts/ndk-config.sh
+!scripts/resolute-install-deps.sh

@@ -1,9 +1,15 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 
-NDK_API = 30
-NDK_PATH = /opt/ndk/android-ndk-r27d
+NDK_PATH ?= /mnt/develop/android-ndk-$(NDK_VERSION)
+ifeq ($(HOST_MACHINE),x86_64)
+NDK_HOST_TAG = linux-x86_64
+else ifneq ($(filter aarch64 arm64,$(HOST_MACHINE)),)
+NDK_HOST_TAG = linux-aarch64
+else
+NDK_HOST_TAG = unsupported-$(HOST_MACHINE)
+endif
 ANDROID_TOOLCHAIN_PATH = \
-    $(abspath $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64/bin)
+    $(abspath $(NDK_PATH)/toolchains/llvm/prebuilt/$(NDK_HOST_TAG)/bin)
 ANDROID_TOOLCHAIN_STRIP_PATH = $(ANDROID_TOOLCHAIN_PATH)/llvm-strip
 
 ifeq ($(NDK_ARCH), arm64)
@@ -17,7 +23,7 @@ $(error unknown abi $(NDK_ARCH))
 endif
 
 ANDROID_SYSROOT_PATH = \
-    $(abspath $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64/sysroot)
+    $(abspath $(NDK_PATH)/toolchains/llvm/prebuilt/$(NDK_HOST_TAG)/sysroot)
 ANDROID_SYSROOT_INCLUDE_PATH = \
     $(ANDROID_SYSROOT_PATH)/usr/include/
 ANDROID_SYSROOT_LIB_PATH = \
@@ -33,6 +39,7 @@ ANDROID_BUILD_RULES_SHA256 = $(shell sha256sum \
 	| sha256sum | cut -d ' ' -f 1)
 ANDROID_CONFIG_SIGNATURE_ARGS = \
 	"NDK_PATH=$(abspath $(NDK_PATH))" \
+	"NDK_HOST_TAG=$(NDK_HOST_TAG)" \
 	"NDK_REVISION=$(ANDROID_NDK_REVISION)" \
 	"NDK_TOOLCHAIN_SHA256=$(ANDROID_NDK_TOOLCHAIN_SHA256)" \
 	"NDK_ARCH=$(NDK_ARCH)" \

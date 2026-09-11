@@ -2,6 +2,29 @@
 
 Notable changes to this independently maintained fork are recorded here.
 
+## v2.0.2
+
+### Changed
+
+- Updated bpftrace to 0.27.0, OpenSSL to 4.0.2 and XZ to 5.8.4.
+- Kept LLVM/Clang locked at 21.1.8 and clarified that NDK and dependency updates
+  preserve this pin.
+- Rebased the tracefs fallback onto bpftrace v0.27.0, with attachment-owned perf
+  FDs, unique event names and rollback on partial failure. Build rules select
+  the versioned patch from the manifest; added host fault-injection tests.
+- Updated Gnulib to commit `4d97575dcb6a8a6a4a82cbdc78a672d371c022d1`
+  and used Savannah's dedicated HTTPS endpoint for source retrieval.
+- Upgraded to Android NDK r30 and unified the default API at 35. NDK release,
+  revision, API and official Linux archive checksum are configured in
+  `projects/versions.mk` for Make, local builds, Docker and CI.
+- Selected the native Linux NDK host toolchain on x86_64 and AArch64; AArch64
+  uses a self-built NDK. Docker follows the host CPU by default.
+- Regenerated Autotools configuration and the bpftrace strip wrapper when NDK
+  settings change, preventing stale tool paths after an upgrade.
+- Updated the filesystem compatibility helper to use the configured Android
+  API and C++26. Dependency language standards and artifact linkage stay as
+  specified by their build rules.
+
 ## v2.0.1
 
 ### Changed

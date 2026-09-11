@@ -1,4 +1,10 @@
 # Setting up a phone
+
+The default build now targets Android API 35 (Android 15). Use a device or
+emulator at that API level or newer for the default artifacts. The older
+kernel/device examples below describe BPF support and kernel development;
+they do not establish compatibility with the current prebuilt tools.
+
 This document describes steps necessary to enable BPF, Uprobes and Kprobes on some Android devices. Note that these steps reduce security and might result in voiding warranties. Follow the steps at your own risk.
 
 ## Root

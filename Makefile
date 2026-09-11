@@ -41,6 +41,7 @@ export PATH:=$(abspath $(HOST_OUT_DIR)/bin):$(PATH)
 all:
 	@echo "Choose a project to build"
 
+include projects/versions.mk
 include toolchains/toolchains.mk
 
 $(ANDROID_BUILD_DIR) $(HOST_BUILD_DIR) $(DOWNLOADS_DIR) $(ANDROID_SYSROOTS_OUT_DIR):
@@ -65,7 +66,6 @@ setup-env:
 .PHONY: clean fetch-sources remove-sources install uninstall setup-env
 .DELETE_ON_ERROR:
 
-include projects/versions.mk
 include projects/project.mk
 include projects/licenses.mk
 include projects/*/build.mk

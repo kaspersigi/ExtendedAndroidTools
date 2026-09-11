@@ -14,7 +14,15 @@ ANDROID_EXTRA_CONFIGURE_FLAGS = --host=$(ANDROID_TRIPLE) --prefix=$(abspath $(AN
 HOST_CONFIG_SITE = $(HOST_OUT_DIR)/share/config.site
 HOST_EXTRA_CONFIGURE_FLAGS = --prefix=$(abspath $(HOST_OUT_DIR))
 
-$(ANDROID_CONFIG_SITE): | $(ANDROID_OUT_DIR)
+ANDROID_CONFIG_SITE_SIGNATURE = $(ANDROID_BUILD_DIR)/config-site.config
+$(ANDROID_CONFIG_SITE_SIGNATURE): force-config-signature
+$(ANDROID_CONFIG_SITE_SIGNATURE): scripts/update-signature.sh | $(ANDROID_BUILD_DIR)
+	@scripts/update-signature.sh $@ \
+	    "PROJECT=android-config-site" \
+	    "TEMPLATE_SHA256=$(shell sha256sum toolchains/config.site.template | cut -d ' ' -f 1)" \
+	    $(ANDROID_CONFIG_SIGNATURE_ARGS)
+
+$(ANDROID_CONFIG_SITE): $(ANDROID_CONFIG_SITE_SIGNATURE) | $(ANDROID_OUT_DIR)
 	cp toolchains/config.site.template $@
 	@sed -ibkp -e "s+<BIN_PATH>+$(abspath $(ANDROID_TOOLCHAIN_PATH))+g" $@
 	@sed -ibkp -e "s+<TRIPLE>+$(ANDROID_TRIPLE)+g" $@

@@ -8,7 +8,7 @@ stdc++fs: $(STDCXXFS_ANDROID)
 
 $(STDCXXFS_ANDROID): $(STDCXXFS_ANDROID_CONFIG_FILE)
 $(STDCXXFS_ANDROID): | $(STDCXXFS_ANDROID_BUILD_DIR) $(ANDROID_OUT_DIR)
-	$(ANDROID_TOOLCHAIN_PATH)/clang++ -target $(ANDROID_TRIPLE) -c -std=c++17 projects/stdc++fs/thunks.cpp -o $(ANDROID_BUILD_DIR)/thunks.o
+	$(ANDROID_TOOLCHAIN_PATH)/$(ANDROID_TRIPLE)$(NDK_API)-clang++ -c -std=c++26 projects/stdc++fs/thunks.cpp -o $(ANDROID_BUILD_DIR)/thunks.o
 	$(ANDROID_TOOLCHAIN_PATH)/llvm-ar rc $(ANDROID_OUT_DIR)/lib/libstdc++fs.a $(ANDROID_BUILD_DIR)/thunks.o
 	touch $@
 

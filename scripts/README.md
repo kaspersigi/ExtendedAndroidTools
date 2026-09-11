@@ -7,8 +7,9 @@
 - `scripts/verify-artifacts.sh`
 - `scripts/generate-checksums.sh`
 - `scripts/android-smoke-test.sh`
+- `scripts/test-bpftrace-tracefs.py`
 
-它们用于在 Ubuntu 26.04（代号 Resolute）x86_64 主机上直接构建
+它们用于在 Ubuntu 26.04（代号 Resolute）x86_64 或 AArch64 主机上直接构建
 ExtendedAndroidTools，不依赖 Docker 构建环境。
 
 `resolute-install-deps.sh` 负责安装主机依赖；
@@ -22,15 +23,23 @@ ExtendedAndroidTools，不依赖 Docker 构建环境。
 默认支持：
 
 - 主机发行版：Ubuntu 26.04（Resolute）
-- 主机架构：x86_64
-- Android NDK：r27d
+- 主机架构：x86_64 或 AArch64
+- Android NDK：r30
 - Android API：35
 - 普通单目标构建架构：arm64（`all` 固定构建 arm64 和 x86_64）
 - 构建类型：Release
 - 并行线程数：主机 `nproc` 返回的逻辑 CPU 数
 
-构建脚本目前使用 NDK 的 `linux-x86_64` 预编译工具链，所以即使设置
-`ALLOW_UNSUPPORTED_HOST=1`，主机架构仍然必须是 x86_64。
+构建脚本按主机 CPU 选择 NDK：x86_64 使用 `linux-x86_64`，AArch64 使用
+`linux-aarch64`。Google 官方 Linux 包只有 x86_64；AArch64 主机使用自编 r30，
+放在 `/mnt/develop/android-ndk-r30` 或通过 `NDK_PATH` 指定。AArch64 自动下载必须提供
+自编包的 `NDK_DOWNLOAD_URL` 和 `NDK_DOWNLOAD_SHA256`，不会回退下载 x86_64 包。
+`NDK_ARCH` 是 Android 目标架构，与主机架构分别选择。
+
+NDK 版本、revision、默认 API 和官方 Linux x86_64 包摘要集中配置在
+`projects/versions.mk`。Make、本地脚本、Docker 和 CI 共用这份配置；升级后需要重建
+Docker 镜像。已有工程迁移 NDK 时先执行 `make clean`，清除旧对象和安装产物，保留
+`projects/*/sources/` 源码缓存。
 
 `ALLOW_UNSUPPORTED_HOST=1` 只跳过 Ubuntu 26.04 发行版检查，不表示其他发行版已经
 测试或保证可用。
@@ -284,17 +293,17 @@ THREADS=16 ./scripts/resolute-local-build.sh
 示例：
 
 ```bash
-NDK_API=30 ./scripts/resolute-local-build.sh
+NDK_API=35 ./scripts/resolute-local-build.sh
 ```
 
 脚本会检查 NDK 中是否存在对应 API 的 Clang 驱动，例如 arm64、API 35 对应：
 
 ```text
-toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
+toolchains/llvm/prebuilt/<host-tag>/bin/aarch64-linux-android35-clang
 ```
 
-`NDK_API` 必须是大于零的整数。需要在较低 Android 版本上运行时，应根据目标设备选择
-合适的最低 API，同时确保所选 NDK 提供对应工具链入口。
+`<host-tag>` 为 `linux-x86_64` 或 `linux-aarch64`。`NDK_API` 必须是大于零的整数。
+需要在较低 Android 版本上运行时，应根据目标设备选择合适的最低 API，同时确保所选 NDK 提供对应工具链入口。
 
 ### 5.4 NDK_ARCH
 
@@ -334,17 +343,16 @@ out/android/<NDK_ARCH>/
 默认值：
 
 ```text
-r27d
+r30
 ```
 
-该值用于组成首选 NDK 路径、下载文件名和临时缓存目录：
+该值由 `projects/versions.mk` 中的 `NDK_VERSION` 配置，用于组成首选 NDK 路径、
+下载文件名和临时缓存目录。升级时同时更新该文件中的 `NDK_REVISION` 和
+`NDK_LINUX_X86_64_SHA256`；`NDK_API` 设置默认 Android API。NDK 这四项使用
+`名称 := 字面值` 格式，便于 Shell 入口读取，不能使用 Make 表达式。
 
-```bash
-NDK_VERSION=r27d ./scripts/resolute-local-build.sh
-```
-
-如果修改 NDK 版本，需要确保 Google 下载地址中存在相应的
-`android-ndk-<version>-linux.zip`，或者同时提供 `NDK_DOWNLOAD_URL`。
+`NDK_VERSION` 环境变量不能覆盖版本清单；设置不同值会报错。`NDK_API` 仍可通过环境
+变量覆盖本地脚本默认值，直接调用 Make 则使用 `make NDK_API=35 ...`。
 
 ### 5.6 NDK_PATH
 
@@ -353,8 +361,10 @@ NDK_VERSION=r27d ./scripts/resolute-local-build.sh
 显式指定 NDK 目录时，它具有最高优先级：
 
 ```bash
-NDK_PATH=/opt/android-ndk-r27d ./scripts/resolute-local-build.sh
+NDK_PATH=/opt/android-ndk-r30 ./scripts/resolute-local-build.sh
 ```
+
+脚本会校验 `source.properties` 的 revision 与版本清单一致，并执行编译器版本探测。
 
 如果显式目录不存在或缺少当前架构/API 的编译器，脚本直接报错，不会自动改用其他
 NDK。
@@ -364,7 +374,7 @@ NDK。
 默认值：
 
 ```text
-/mnt/develop/android-ndk-r27d
+/mnt/develop/android-ndk-r30
 ```
 
 实际默认值根据 `NDK_VERSION` 组成：
@@ -376,7 +386,7 @@ NDK。
 可以覆盖首选路径：
 
 ```bash
-PREFERRED_NDK_PATH=/data/android/android-ndk-r27d \
+PREFERRED_NDK_PATH=/data/android/android-ndk-r30 \
     ./scripts/resolute-local-build.sh
 ```
 
@@ -409,7 +419,7 @@ NDK_TMP_DIR=/var/tmp ./scripts/resolute-local-build.sh
 
 ### 5.9 NDK_DOWNLOAD_URL
 
-默认值为空，此时使用 Google 官方形式的下载地址：
+默认值为空，此时仅 x86_64 主机可使用 Google 官方下载地址：
 
 ```text
 https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
@@ -418,7 +428,8 @@ https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
 可以指定完整下载 URL：
 
 ```bash
-NDK_DOWNLOAD_URL=https://example.invalid/android-ndk-r27d-linux.zip \
+NDK_DOWNLOAD_URL=https://example.invalid/android-ndk-r30-linux.zip \
+NDK_DOWNLOAD_SHA256='<64位十六进制摘要>' \
     ./scripts/resolute-local-build.sh
 ```
 
@@ -426,12 +437,12 @@ NDK_DOWNLOAD_URL=https://example.invalid/android-ndk-r27d-linux.zip \
 
 ### 5.10 NDK_DOWNLOAD_SHA256
 
-默认的 Google 官方 r27d Linux 压缩包摘要已经内置。使用其他 `NDK_VERSION` 或
-`NDK_DOWNLOAD_URL` 触发下载时，必须显式提供对应的小写 SHA-256：
+Google 官方 r30 Linux x86_64 压缩包摘要由 `projects/versions.mk` 提供。使用自定义
+`NDK_DOWNLOAD_URL`（包括自编 AArch64 包）触发下载时，必须显式提供对应的小写 SHA-256：
 
 ```bash
-NDK_VERSION=r29 \
-NDK_DOWNLOAD_SHA256=<64位十六进制摘要> \
+NDK_DOWNLOAD_URL=https://example.invalid/android-ndk-r30-linux.zip \
+NDK_DOWNLOAD_SHA256='<64位十六进制摘要>' \
     ./scripts/resolute-local-build.sh
 ```
 
@@ -562,15 +573,15 @@ VERIFY_ARTIFACTS=0 ./scripts/resolute-local-build.sh all
 
 ```text
 显式 NDK_PATH
-  -> /mnt/develop/android-ndk-r27d
-  -> /tmp/android-ndk-r27d
-  -> 下载到 /tmp/android-ndk-r27d
+  -> /mnt/develop/android-ndk-r30
+  -> /tmp/android-ndk-r30
+  -> 下载到 /tmp/android-ndk-r30
 ```
 
 如果已选择的显式目录或首选目录存在但内容不完整，脚本不会覆盖它，也不会静默回退到
 另一个 NDK，而是报错退出。
 
-如果 `/tmp/android-ndk-r27d` 已存在但不完整，脚本同样不会覆盖。应先检查目录内容，
+如果 `/tmp/android-ndk-r30` 已存在但不完整，脚本同样不会覆盖。应先检查目录内容，
 确认不再需要后再由用户手动处理。
 
 
@@ -687,11 +698,28 @@ NDK_ARCH=x86_64 ./scripts/resolute-local-build.sh bpftrace-static
 projects/versions.mk
 ```
 
-`psf/black` GitHub Action 是唯一例外。由于 workflow 不能直接读取 Make 变量，而且第三方
+**LLVM/Clang 明确锁定为 21.1.8（`llvmorg-21.1.8`）。更新 NDK 或其他依赖时，
+保持 `LLVM_BRANCH_OR_TAG` 不变。** 该约定适用于本项目编译的宿主工具和 Android
+库；交叉编译器由单独配置的 NDK 版本提供。清理缓存或重新构建也使用这个锁定版本。
+
+`psf/black` GitHub Action 是版本集中管理的唯一例外。由于 workflow 不能直接读取 Make 变量，而且第三方
 Action 的提交 SHA、Action release 和传入的 Black 版本必须作为一组审核，
 `.github/workflows/black.yml` 会独立固定该版本。升级 Black 时需要同时更新
 `projects/versions.mk` 中的 `BLACK_VERSION`、workflow 的 Action SHA、版本注释和 `version`
 输入；其余项目版本仍只在 `projects/versions.mk` 维护。
+
+bpftrace 的 tracefs 补丁文件名由 `BPFTRACE_COMMIT` 推导，例如 `v0.27.0` 对应
+`projects/bpftrace/tracefs_fallback_v0.27.0.patch`。升级时需要基于对应的上游 tag
+重新检查补丁；构建规则会把补丁内容纳入源码签名，动态和独立静态构建都会使用它。
+获取源码后，可运行以下回归检查：
+
+```bash
+python3 scripts/test-bpftrace-tracefs.py
+```
+
+脚本在临时目录中将补丁应用到原始 tag，并使用宿主 C++17 编译器，对实际补丁中的
+kprobe 挂载类进行故障注入测试，检查 FD 关闭、事件回滚和事件名隔离。这些测试不需要
+root 或设备；真实内核的 tracefs 挂载仍需在有相应权限的设备上验证。
 
 Python 只需要在清单中设置一次完整版本：
 
@@ -704,7 +732,7 @@ PYTHON_VERSION := <major.minor.patch>
 或 workflow 中加入 `python3.<minor>` 路径。普通的 `python3` 仍可作为主机依赖命令或最终包
 内的兼容入口，它不代表固定某个 Python 次版本。
 
-建议一次只升级一个模块，便于把失败归因到明确的上游变化：
+除锁定的 LLVM 外，建议一次只升级一个模块，便于把失败归因到明确的上游变化：
 
 ```bash
 # 1. 修改 projects/versions.mk 中一个模块的版本
@@ -715,9 +743,9 @@ PYTHON_VERSION := <major.minor.patch>
 ./scripts/resolute-local-build.sh bpftools bpftools-min
 ```
 
-将 `python` 替换为 `ffi`、`xz`、`zstd`、`elfutils`、`bcc` 或其他项目名即可。模块使用 Git
-提交而不是 release tag 时，也只在 `projects/versions.mk` 更新提交哈希。LLVM 同样在该文件
-声明，但当前项目明确固定为 `llvmorg-21.1.8`。OpenSSL 的 LTS 版本和 CPython 内置的
+将 `python` 替换为 `ffi`、`xz`、`zstd`、`elfutils`、`bcc` 或其他未锁定的项目名即可。
+模块使用 Git 提交而不是 release tag 时，也只在 `projects/versions.mk` 更新提交哈希。
+OpenSSL 的稳定版本和 CPython 内置的
 pip wheel 版本也分别由 `OPENSSL_VERSION`、`PIP_VERSION` 统一声明；升级 Python 时应同步
 确认源码树 `Lib/ensurepip/_bundled/` 中的 pip wheel 文件名并更新 `PIP_VERSION`。
 
@@ -813,9 +841,9 @@ build/android/<NDK_ARCH>/bpftrace.config
 `STATIC_LINKING=true` 切回动态完整包时，不再需要为了恢复 `libLLVM.so` 手动清理 LLVM
 缓存。
 
-切换 `LLVM_BRANCH_OR_TAG` 时，LLVM 源码签名会自动重新获取对应源码；同一份源码切换
-动态/静态 LLVM 配置时，构建配置签名会在原目录重新运行 CMake。通常不再需要手动清理
-LLVM，只有排查上游构建系统没有正确处理的残留状态时才使用 `CLEAN_MODULES=llvm`。
+LLVM 源码保持 `llvmorg-21.1.8`；同一份源码切换动态/静态 LLVM 配置时，构建配置签名
+会在原目录重新运行 CMake。通常不再需要手动清理 LLVM，只有排查上游构建系统没有
+正确处理的残留状态时才使用 `CLEAN_MODULES=llvm`，重新获取的仍是锁定版本。
 
 
 ## 8. 清理功能
@@ -885,14 +913,14 @@ CLEAN_MODULES="llvm bcc" ./scripts/resolute-local-build.sh
 也就是说，构建产物会全量重建，但没有被指定的其他模块源码仍然保留，不需要重新
 下载。
 
-LLVM 版本切换示例：
+重新获取并构建锁定的 LLVM 21.1.8：
 
 ```bash
 CLEAN_MODULES=llvm ./scripts/resolute-local-build.sh
 ```
 
-这会删除旧的 `projects/llvm/sources` 和全部构建输出，然后根据
-`projects/versions.mk` 当前设置的 tag 重新下载 LLVM 并开始构建。
+这会删除 `projects/llvm/sources` 和全部构建输出，然后根据
+`projects/versions.mk` 中锁定的 `llvmorg-21.1.8` 重新下载 LLVM 并开始构建。
 
 ### 8.2 CLEAN_ALL
 
@@ -913,8 +941,8 @@ projects/*/sources/
 它不会删除仓库外的 NDK，包括：
 
 ```text
-/mnt/develop/android-ndk-r27d
-/tmp/android-ndk-r27d
+/mnt/develop/android-ndk-r30
+/tmp/android-ndk-r30
 ```
 
 `CLEAN_ALL=1` 和非空的 `CLEAN_MODULES` 不能同时使用。
@@ -992,7 +1020,7 @@ BUILD_TYPE=Debug ./scripts/resolute-local-build.sh
 ### 9.5 使用指定 NDK
 
 ```bash
-NDK_PATH=/mnt/develop/android-ndk-r27d \
+NDK_PATH=/mnt/develop/android-ndk-r30 \
     ./scripts/resolute-local-build.sh
 ```
 
@@ -1002,15 +1030,15 @@ NDK_PATH=/mnt/develop/android-ndk-r27d \
 DOWNLOAD_NDK=0 ./scripts/resolute-local-build.sh
 ```
 
-### 9.7 切换 LLVM tag 后自动刷新源码并构建
+### 9.7 单独构建锁定的 LLVM 21.1.8
 
-更新 `projects/versions.mk` 中的 `LLVM_BRANCH_OR_TAG` 后直接运行：
+保持 `projects/versions.mk` 中的 `LLVM_BRANCH_OR_TAG := llvmorg-21.1.8`，直接运行：
 
 ```bash
 ./scripts/resolute-local-build.sh llvm
 ```
 
-源码签名会使旧 LLVM 源码目录失效；无需预先执行模块清理。
+源码和配置签名会按需刷新缓存；无需修改 LLVM 版本或预先执行模块清理。
 
 ### 9.8 全量重新构建但保留所有第三方源码
 
@@ -1174,6 +1202,12 @@ host Flex 配置固定使用上游支持的 `--disable-bootstrap`，消除这项
 
 ## 12. 构建前后的建议检查
 
+运行无需 NDK、Docker 或 Android 设备的配置回归测试（需要 Python 3、Bash、Make、curl 和 unzip）：
+
+```bash
+python3 scripts/test-ndk-config.py
+```
+
 查看脚本实际默认值和帮助：
 
 ```bash
@@ -1183,7 +1217,10 @@ host Flex 配置固定使用上游支持的 `--disable-bootstrap`，消除这项
 确认 NDK：
 
 ```bash
-test -x /mnt/develop/android-ndk-r27d/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
+source ./scripts/ndk-config.sh
+ndk_path="/mnt/develop/android-ndk-$NDK_VERSION"
+ndk_validate_revision "$ndk_path"
+"$ndk_path/toolchains/llvm/prebuilt/$(ndk_host_tag)/bin/aarch64-linux-android${NDK_API}-clang" --version
 ```
 
 构建后检查产物：
@@ -1217,7 +1254,7 @@ git status --short
 
 普通提交检查与 tag 发布分开触发：
 
-- 分支 push 和 Pull Request：运行 `black.yml` 的 Python 格式检查，以及 `jdwp.yml`
+- 分支 push 和 Pull Request：运行 `black.yml` 的 NDK 配置回归测试和 Python 格式检查，以及 `jdwp.yml`
   的 JDWP 测试、类型检查和格式检查；不构建 Android 发布产物，也不创建 Release。
 - 推送 `v*` tag：由 `release.yml` 通过 `workflow_call` 复用上述两个检查 workflow；
   两项检查均成功后，才开始双架构 Android 编译、产物验收和 Release 发布。
@@ -1236,7 +1273,7 @@ JDWP 检查使用 `make THREADS=2 jdwp-check`，仍会准备测试需要的 Buck
 
 - GitHub runner：`ubuntu-26.04`；
 - Android API：35；
-- Android NDK：r27d；
+- Android NDK：r30；
 - 构建入口：`scripts/resolute-local-build.sh`；
 - 依赖安装入口：`scripts/resolute-install-deps.sh`；
 - 架构矩阵：arm64 和 x86_64；
@@ -1254,7 +1291,8 @@ Release 保留六个独立产品文件：arm64/x86_64 各自的完整包、精�
 CI 失败时应先区分 runner 基础设施问题和项目编译问题。
 
 每个 GitHub Actions job 都是独立环境。workflow 将 `NDK_TMP_DIR` 设置为
-`${{ runner.temp }}`，由 `resolute-local-build.sh` 在该目录中选择 NDK。NDK r27d 目录通过
+`${{ runner.temp }}`，由 `resolute-local-build.sh` 在该目录中选择 NDK。CI 从
+`projects/versions.mk` 读取 NDK 配置，缓存键包含 runner 架构、版本和下载摘要。NDK r30 目录通过
 `actions/cache` 缓存：首次缓存未命中时会下载，后续构建可以直接恢复，避免每个 workflow
 run 重复下载。LLVM 和完整构建目录不进入缓存，以避免大体积缓存占用免费存储额度，并
 避免不同构建参数之间复用不兼容的 CMake 状态。

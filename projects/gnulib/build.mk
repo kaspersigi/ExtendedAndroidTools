@@ -6,7 +6,7 @@ $(GNULIB_ANDROID):
 	echo "gnulib build is not supported"
 	false
 
-GNULIB_REPO = https://git.savannah.gnu.org/git/gnulib.git
+GNULIB_REPO = https://https.git.savannah.gnu.org/git/gnulib.git
 projects/gnulib/sources:
 	@$(call source-transaction-begin,$@); \
 	git init $@; \

@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
-# Central version manifest for fetched projects and host Python packages.
+# Central version manifest for the NDK, fetched projects and host Python packages.
 # Keep release selection here so build rules and packaging logic do not need
 # to duplicate version or ABI strings.
 
+# Keep these four NDK values literal: scripts/ndk-config.sh reads them too.
+NDK_VERSION := r30
+NDK_REVISION := 30.0.16248370
+NDK_API := 35
+NDK_LINUX_X86_64_SHA256 := 753611f410d002cfcd3f3dc2ef49aad532089d3180b436c060a90bf0fcb64df2
+
 BCC_COMMIT := v0.37.0
 BLACK_VERSION := 26.5.1
-BPFTRACE_COMMIT := v0.26.1
+BPFTRACE_COMMIT := v0.27.0
 BUCK2_VERSION := 2026-09-01
 BUCK2_AARCH64_DARWIN_SHA256 := 0962ca7df1a76b0707c6ba3ff1216d31431d493ae37ef001ea9b42f4a74109c9
 BUCK2_AARCH64_LINUX_SHA256 := dbcee75db00c557df2dbb382c6b5be1643c086b87d924aab7060998a7a6d5801
@@ -19,16 +25,17 @@ ELFUTILS_VERSION := 0.196
 ELFUTILS_SOURCE_SHA256 := fd5cc6b77ad6773cac93cb3f415f9318ac3b3455eecf801f6b4a742c4f6c7209
 FFI_BRANCH_OR_TAG := v3.8.0
 FLEX_COMMIT_HASH := 4fcc71489ae298c35b0b786114ad524945f2cf95
-GNULIB_COMMIT_HASH := 331c8d065a8a753de71f084f068473ccd5e4c34a
+GNULIB_COMMIT_HASH := 4d97575dcb6a8a6a4a82cbdc78a672d371c022d1
 LIBBPF_TAG := v1.7.0
+# Intentionally locked: keep LLVM 21.1.8 during NDK and dependency updates.
 LLVM_BRANCH_OR_TAG := llvmorg-21.1.8
-OPENSSL_VERSION := 3.5.8
+OPENSSL_VERSION := 4.0.2
 OPENSSL_BRANCH_OR_TAG := openssl-$(OPENSSL_VERSION)
 PIP_VERSION := 26.2.1
 PYRE_VERSION := 0.10.0
 PYTHON_VERSION := 3.14.7
 SETUPTOOLS_VERSION := 84.0.0
-XZ_BRANCH_OR_TAG := v5.8.3
+XZ_BRANCH_OR_TAG := v5.8.4
 ZSTD_TAG := v1.5.7
 
 PYTHON_VERSION_COMPONENTS := $(subst ., ,$(PYTHON_VERSION))

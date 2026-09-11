@@ -1,0 +1,301 @@
+diff --git a/src/ast/passes/ap_probe_expansion.cpp b/src/ast/passes/ap_probe_expansion.cpp
+index 30aafe2a81275119267861251bb126ff33a84c11..a6d5b36a7d1db40b0b2901410a73b43f8239d9aa 100644
+--- a/src/ast/passes/ap_probe_expansion.cpp
++++ b/src/ast/passes/ap_probe_expansion.cpp
+@@ -410,9 +410,18 @@ void ProbeAndApExpander::visit(AttachPointList &aps)
+         // available_filter_functions file or it doesn't exist on the system
+         auto matches = probe_matcher_.get_matches_for_ap(*ap);
+         if (matches.empty() && (pt != ProbeType::watchpoint)) {
+-          if (is_kprobe && !bpftrace_.safe_mode_) {
+-            new_aps.push_back(ap);
+-            break;
++          if (is_kprobe) {
++            if (!bpftrace_.safe_mode_) {
++              new_aps.push_back(ap);
++              break;
++            }
++
++            // Some Android kernels expose kprobe_events but no function list.
++            // For an exact probe, let the kernel validate the attachment.
++            if (func_info_.kernel_info().get_traceable_funcs().empty()) {
++              new_aps.push_back(ap);
++              break;
++            }
+           }
+ 
+           const auto missing_probes = bpftrace_.config_->missing_probes;
+diff --git a/src/attached_probe.cpp b/src/attached_probe.cpp
+index 1c5b5343e73660861513df8b0fd02c226053219e..a3475a1fc371c3a6fee91175bea8003681c2ca95 100644
+--- a/src/attached_probe.cpp
++++ b/src/attached_probe.cpp
+@@ -3,6 +3,7 @@
+ #endif
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <cstring>
+ #include <elf.h>
+ #include <fcntl.h>
+@@ -25,6 +26,7 @@
+ #include "disasm.h"
+ #include "log.h"
+ #include "symbols/kernel.h"
++#include "tracefs/tracefs.h"
+ #include "util/bpf_names.h"
+ #include "util/cpus.h"
+ #include "util/exceptions.h"
+@@ -317,6 +319,8 @@ public:
+ private:
+   AttachedKprobeProbe(const Probe &probe, struct bpf_link *link);
+   struct bpf_link *link_;
++  std::string tracefs_event_name_;
++  std::vector<int> perf_event_fds_;
+ };
+ 
+ AttachedKprobeProbe::AttachedKprobeProbe(const Probe &probe,
+@@ -327,7 +331,15 @@ AttachedKprobeProbe::AttachedKprobeProbe(const Probe &probe,
+ 
+ AttachedKprobeProbe::~AttachedKprobeProbe()
+ {
+-  if (bpf_link__destroy(link_)) {
++  // Close every perf event before removing its tracefs definition.
++  for (int fd : perf_event_fds_)
++    close(fd);
++  if (!tracefs_event_name_.empty() &&
++      tracefs::detach_kprobe(tracefs_event_name_)) {
++    LOG(WARNING) << "Failed to detach tracefs probe: " << tracefs_event_name_;
++  }
++
++  if (link_ && bpf_link__destroy(link_)) {
+     LOG(WARNING) << "failed to destroy link for kprobe probe: "
+                  << strerror(errno);
+   }
+@@ -335,6 +347,8 @@ AttachedKprobeProbe::~AttachedKprobeProbe()
+ 
+ int AttachedKprobeProbe::link_fd()
+ {
++  if (!link_)
++    return -1;
+   return bpf_link__fd(link_);
+ }
+ 
+@@ -385,16 +399,76 @@ Result<std::unique_ptr<AttachedKprobeProbe>> AttachedKprobeProbe::make(
+   auto *link = bpf_program__attach_kprobe_opts(prog.bpf_prog(),
+                                                kprobe_func,
+                                                &opts);
+-  if (!link) {
+-    if (errno == EILSEQ)
+-      return make_error<AttachError>(
+-          "Possible attachment attempt in the middle of an instruction, "
+-          "try a different offset.");
+-    return make_error<AttachError>();
++  if (link) {
++    return std::unique_ptr<AttachedKprobeProbe>(
++        new AttachedKprobeProbe(probe, link));
+   }
+ 
+-  return std::unique_ptr<AttachedKprobeProbe>(
+-      new AttachedKprobeProbe(probe, link));
++  if (errno == EPERM || errno == ENOENT) {
++    LOG(V1) << "libbpf kprobe attachment failed: " << strerror(errno)
++            << "; trying tracefs fallback";
++    // A tracefs event is global. Distinguish simultaneous processes and
++    // separate attachments of the same probe within one process.
++    static std::atomic<uint64_t> next_event_id{ 0 };
++    std::string ev_name = eventname(probe, offset) + "_" +
++                          std::to_string(getpid()) + "_" +
++                          std::to_string(next_event_id.fetch_add(1));
++    auto attached = std::unique_ptr<AttachedKprobeProbe>(
++        new AttachedKprobeProbe(probe, nullptr));
++    bool is_retprobe = probe.type == ProbeType::kretprobe;
++    std::string module = (!probe.path.empty() && probe.path != "vmlinux")
++                             ? probe.path
++                             : "";
++    int id = tracefs::create_tracefs_kprobe(
++        ev_name, is_retprobe, probe.attach_point, offset, module);
++    if (id < 0)
++      return make_error<AttachError>("tracefs fallback failed to create event");
++
++    // From here, destruction also rolls back partially completed attachment.
++    attached->tracefs_event_name_ = std::move(ev_name);
++    const auto cpus = util::get_online_cpus();
++    if (cpus.empty())
++      return make_error<AttachError>("tracefs fallback found no online CPUs");
++    attached->perf_event_fds_.reserve(cpus.size());
++
++    struct perf_event_attr attr = {};
++    attr.type = PERF_TYPE_TRACEPOINT;
++    attr.size = sizeof(attr);
++    attr.config = id;
++    attr.sample_period = 1;
++    attr.sample_type = PERF_SAMPLE_RAW;
++    attr.wakeup_events = 1;
++
++    for (int cpu : cpus) {
++      int pfd = syscall(
++          __NR_perf_event_open, &attr, -1, cpu, -1, PERF_FLAG_FD_CLOEXEC);
++      if (pfd < 0)
++        return make_error<AttachError>(
++            "tracefs perf_event_open failed on CPU " + std::to_string(cpu) +
++            ": " + strerror(errno));
++      attached->perf_event_fds_.push_back(pfd);
++
++      if (ioctl(pfd, PERF_EVENT_IOC_SET_BPF, prog.fd()) < 0)
++        return make_error<AttachError>(
++            "tracefs PERF_EVENT_IOC_SET_BPF failed: " +
++            std::string(strerror(errno)));
++
++      if (ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0) < 0)
++        return make_error<AttachError>(
++            "tracefs PERF_EVENT_IOC_ENABLE failed: " +
++            std::string(strerror(errno)));
++    }
++
++    LOG(V1) << "tracefs fallback attached " << attached->tracefs_event_name_
++            << " on " << cpus.size() << " CPUs";
++    return attached;
++  }
++
++  if (errno == EILSEQ)
++    return make_error<AttachError>(
++        "Possible attachment attempt in the middle of an instruction, "
++        "try a different offset.");
++  return make_error<AttachError>();
+ }
+ 
+ class AttachedMultiKprobeProbe : public AttachedProbe {
+diff --git a/src/tracefs/tracefs.cpp b/src/tracefs/tracefs.cpp
+index 75dda379897145fa9db76e38630f8947873f1598..9c05ffd27e9088c47d425eaa83382d9cf1625061 100644
+--- a/src/tracefs/tracefs.cpp
++++ b/src/tracefs/tracefs.cpp
+@@ -1,5 +1,10 @@
++#include <cerrno>
++#include <cstring>
++#include <fstream>
++#include <sstream>
+ #include <unistd.h>
+ 
++#include "log.h"
+ #include "tracefs.h"
+ 
+ namespace bpftrace::tracefs {
+@@ -24,4 +29,95 @@ std::string event_format_file(const std::string &category,
+   return path("events/" + category + "/" + event + "/format");
+ }
+ 
++constexpr const char *kprobe_events = "kprobe_events";
++
++static int write_kprobe(const std::string &ev_name,
++                        bool is_retprobe,
++                        const std::string &func,
++                        uint64_t offset,
++                        const std::string &module)
++{
++  std::string kprobe_event_file = path(kprobe_events);
++  std::ofstream kprobe_events_stream(kprobe_event_file, std::ios_base::app);
++  if (kprobe_events_stream.fail()) {
++    LOG(ERROR) << "Failed to open " << kprobe_event_file << ": "
++               << strerror(errno);
++    return -1;
++  }
++
++  std::stringstream kprobe_def;
++  kprobe_def << (is_retprobe ? "r" : "p") << ":" << ev_name << " ";
++  if (!module.empty())
++    kprobe_def << module << ":";
++
++  if (func.empty()) {
++    kprobe_def << "0x" << std::hex << offset;
++  } else {
++    kprobe_def << func << "+" << offset;
++  }
++
++  LOG(V1) << "Writing " << kprobe_def.str() << " to " << kprobe_events;
++  kprobe_events_stream << kprobe_def.str() << std::endl;
++  if (kprobe_events_stream.fail()) {
++    LOG(ERROR) << "Failed to write to " << kprobe_events << ": "
++               << strerror(errno);
++    return -1;
++  }
++
++  return 0;
++}
++
++int create_tracefs_kprobe(const std::string &ev_name,
++                          bool is_retprobe,
++                          const std::string &func,
++                          uint64_t offset,
++                          const std::string &module)
++{
++  if (write_kprobe(ev_name, is_retprobe, func, offset, module))
++    return -1;
++
++  std::string event_path = path("events/kprobes/" + ev_name);
++  std::string id_path = event_path + "/id";
++
++  std::ifstream id_file(id_path);
++  if (id_file.fail()) {
++    LOG(ERROR) << "Could not open tracefs event ID file '" << id_path
++               << "': " << strerror(errno);
++    detach_kprobe(ev_name);
++    return -1;
++  }
++
++  int id = 0;
++  id_file >> id;
++  if (id_file.fail() || id <= 0) {
++    LOG(ERROR) << "Invalid tracefs event ID in '" << id_path << "'";
++    detach_kprobe(ev_name);
++    return -1;
++  }
++
++  return id;
++}
++
++int detach_kprobe(const std::string &ev_name)
++{
++  std::string kprobe_event_file = path(kprobe_events);
++  std::ofstream kprobe_events_stream(kprobe_event_file, std::ios_base::app);
++  if (kprobe_events_stream.fail()) {
++    LOG(ERROR) << "Failed to open " << kprobe_event_file << ": "
++               << strerror(errno);
++    return -1;
++  }
++
++  std::string kprobe_def = "-:" + ev_name;
++  LOG(V1) << "Writing " << kprobe_def << " to " << kprobe_events;
++  kprobe_events_stream << kprobe_def << std::endl;
++  if (kprobe_events_stream.fail()) {
++    LOG(ERROR) << "Failed to write to " << kprobe_events << ": "
++               << strerror(errno);
++    return -1;
++  }
++
++  return 0;
++}
++
+ } // namespace bpftrace::tracefs
+diff --git a/src/tracefs/tracefs.h b/src/tracefs/tracefs.h
+index cd8320803877c64e4b83048a3cbd97bd92a5b1a4..78790fc5cf22ee40db158b75d5742683216c1cc1 100644
+--- a/src/tracefs/tracefs.h
++++ b/src/tracefs/tracefs.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <cstdint>
+ #include <string>
+ 
+ namespace bpftrace::tracefs {
+@@ -26,4 +27,12 @@ inline std::string available_filter_functions()
+ std::string event_format_file(const std::string &category,
+                               const std::string &event);
+ 
++int create_tracefs_kprobe(const std::string &ev_name,
++                          bool is_retprobe,
++                          const std::string &func,
++                          uint64_t offset,
++                          const std::string &module);
++
++int detach_kprobe(const std::string &ev_name);
++
+ } // namespace bpftrace::tracefs

@@ -18,6 +18,7 @@ BPFTRACE_EXTRA_LDFLAGS += "$(abspath $(ANDROID_OUT_DIR))/lib/liblzma.a"
 endif
 
 STRIP_THUNK = $(HOST_OUT_DIR)/bpftrace-strip-thunk
+STRIP_THUNK_CONFIG = $(HOST_BUILD_DIR)/bpftrace-strip.config
 BPFTRACE_ANDROID_CONFIG_FILE := $(ANDROID_BUILD_DIR)/bpftrace.config
 BPFTRACE_ANDROID_CONFIGURED_FILE := $(BPFTRACE_ANDROID_BUILD_DIR)/.configured
 
@@ -71,20 +72,28 @@ $(BPFTRACE_ANDROID_CONFIGURED_FILE): | $(BPFTRACE_ANDROID_BUILD_DIR)
 		-DLIBBPF_LIBRARIES=$(abspath $(ANDROID_OUT_DIR))/lib/libbpf.a
 	touch $@
 
-$(STRIP_THUNK): projects/bpftrace/strip-thunk | $(HOST_OUT_DIR)
+$(STRIP_THUNK_CONFIG): force-config-signature
+$(STRIP_THUNK_CONFIG): scripts/update-signature.sh | $(HOST_BUILD_DIR)
+	@scripts/update-signature.sh $@ \
+	    "PROJECT=bpftrace-strip-thunk" \
+	    "STRIP_PATH=$(ANDROID_TOOLCHAIN_STRIP_PATH)" \
+	    "NDK_REVISION=$(ANDROID_NDK_REVISION)"
+
+$(STRIP_THUNK): projects/bpftrace/strip-thunk $(STRIP_THUNK_CONFIG) | $(HOST_OUT_DIR)
 	@sed -e "s+<STRIP_PATH>+$(ANDROID_TOOLCHAIN_STRIP_PATH)+g" $< > $@
 	chmod +x $@
 
-BPFTRACE_REPO = https://github.com/iovisor/bpftrace.git/
+BPFTRACE_REPO = https://github.com/bpftrace/bpftrace.git
+BPFTRACE_TRACEFS_PATCH = projects/bpftrace/tracefs_fallback_$(BPFTRACE_COMMIT).patch
 projects/bpftrace/sources:
 	@$(call source-transaction-begin,$@); \
 	git clone $(BPFTRACE_REPO) $@ --depth=1 -b $(BPFTRACE_COMMIT); \
 	cd $@; \
-	git apply --verbose ../tracefs_fallback_v0.26.1.patch; \
+	git apply --verbose $(abspath $(BPFTRACE_TRACEFS_PATCH)); \
 	git apply --verbose ../version_from_git_tag.patch; \
 	$(source-transaction-commit)
 
-$(eval $(call project-source-signature,bpftrace,git:$(BPFTRACE_REPO)@$(BPFTRACE_COMMIT),projects/bpftrace/tracefs_fallback_v0.26.1.patch projects/bpftrace/version_from_git_tag.patch))
+$(eval $(call project-source-signature,bpftrace,git:$(BPFTRACE_REPO)@$(BPFTRACE_COMMIT),$(BPFTRACE_TRACEFS_PATCH) projects/bpftrace/version_from_git_tag.patch))
 
 # Build a standalone static bpftrace without replacing the dynamic bpftrace
 # installed under out/android/<arch>. Its dependencies and LLVM installation

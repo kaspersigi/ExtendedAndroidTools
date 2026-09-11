@@ -1,6 +1,12 @@
 # ExtendedAndroidTools
 Extended Android Tools is a set of makefiles and build environment cross compiling Linux tools we all love for Android. All tools are built using their native build systems (autotools, cmake, etc) and Android NDK. Reference build environment is provided via Docker.
 
+**LLVM/Clang is intentionally locked to 21.1.8 (`llvmorg-21.1.8`)** in
+[projects/versions.mk](projects/versions.mk). Keep this version when updating
+the NDK or other dependencies. The lock applies to the LLVM/Clang sources built
+by this project, including host tools and Android libraries; the NDK compiler
+is supplied by the separately configured NDK release.
+
 # List of supported software
 - [bpftrace](https://github.com/iovisor/bpftrace)
 - [bcc](https://github.com/iovisor/bcc)
@@ -17,7 +23,7 @@ Extended Android Tools is a set of makefiles and build environment cross compili
 
 # Build environment
 ## Docker (recommended)
-The provided [Dockerfile](docker/Dockerfile) defines the Ubuntu 26.04 reference build environment and installs Android NDK r27d. You can access it using the following commands:
+The provided [Dockerfile](docker/Dockerfile) defines the Ubuntu 26.04 reference build environment and installs Android NDK r30. You can access it using the following commands:
 ```
 # Build the Docker image
 ./scripts/build-docker-image.sh
@@ -41,10 +47,26 @@ The provided [Dockerfile](docker/Dockerfile) defines the Ubuntu 26.04 reference 
 THREADS=8 NDK_API=35 ./scripts/run-docker-build-env.sh
 ```
 
-The image name can be overridden for both scripts with `IMAGE_NAME`; the default is `extended-android-tools`. `NDK_VERSION` defaults to `r27d` and must be set to the same value when building and running a customized image. The r27d download checksum is built in; a custom NDK version must also set `NDK_DOWNLOAD_SHA256`. The image platform defaults to `linux/amd64` because the project uses the NDK `linux-x86_64` host toolchain; override it with `DOCKER_PLATFORM` only when a compatible toolchain is provided.
+NDK release selection is centralized in [projects/versions.mk](projects/versions.mk):
+`NDK_VERSION`, `NDK_REVISION`, `NDK_API`, and `NDK_LINUX_X86_64_SHA256`.
+Make, the local scripts, Docker, and CI all read that manifest. After changing
+it, rebuild the Docker image before running it. `IMAGE_NAME` overrides the
+image name for both scripts (default: `extended-android-tools`).
+
+The Docker platform follows the host CPU: `linux/amd64` on x86_64 and
+`linux/arm64` on AArch64. `DOCKER_PLATFORM` can select either explicitly.
+Google supplies the Linux x86_64 NDK; an AArch64 image requires your self-built
+Linux AArch64 NDK ZIP via `NDK_DOWNLOAD_URL` and `NDK_DOWNLOAD_SHA256`.
+A custom URL always requires its own checksum. The ZIP must extract to
+`android-ndk-r30/` and contain the toolchain for the selected image platform.
 
 ## Setting up an Ubuntu 26.04 environment directly
-For builds outside Docker, use the dedicated Ubuntu 26.04 scripts. The dependency script installs the required host packages; the build script selects an existing NDK r27d or downloads it to temporary storage.
+For builds outside Docker, use the dedicated Ubuntu 26.04 scripts. The dependency
+script installs the required host packages; the build script first selects
+`/mnt/develop/android-ndk-r30` (or an explicit
+`NDK_PATH`). On Linux x86_64 it can download the official NDK to temporary
+storage. Linux AArch64 uses your self-built NDK with the `linux-aarch64` host
+toolchain; an automatic download requires a custom URL and checksum.
 
 ```
 ./scripts/resolute-install-deps.sh
@@ -67,12 +89,15 @@ runs full, minimal, and standalone-bpftrace device smoke tests only when adb can
 select exactly one authorized arm64 or x86_64 device. With no suitable device,
 the device step is reported as skipped and the local build remains successful.
 
+When migrating an existing build from an older NDK, run `make clean` first to
+remove old objects and installed libraries; fetched project sources are kept.
+
 See [scripts/README.md](scripts/README.md) for configuration, cleanup, NDK selection, and troubleshooting details.
 
 ## GitHub Actions
 
-Branch pushes and pull requests run Black formatting checks and the JDWP test,
-type-check, and format-check suite. JDWP prepares its required host tools, but
+Branch pushes and pull requests run NDK configuration regression tests, Black
+formatting checks, and the JDWP test, type-check, and format-check suite. JDWP prepares its required host tools, but
 these checks do not build Android release artifacts or publish a Release.
 
 Pushing a `v*` tag runs the same checks first. Only after both checks pass does
@@ -109,11 +134,12 @@ distributions still require their own Android cross-compilation environment
 and are outside the scope of the runtime archive.
 
 # Android device requirements
-Some of the tools require root privileges to run. In addition BPF tools require Linux kernel to provide BPF capabilities: BPF, Kprobes and Uprobes. Most of Android kernels are based on Linux versions that are either too old, or have some or all of the necessary features disabled. The most straigtforward way to access Android environment providing root access and some BPF capabilities (BPF + Uprobes) is to use API 30 Android emulator **without** Google Play Store. To read more on preparing other devices see [dedicated documentation](docs/phone_setup.md).
+Some of the tools require root privileges to run. In addition BPF tools require Linux kernel to provide BPF capabilities: BPF, Kprobes and Uprobes. Most of Android kernels are based on Linux versions that are either too old, or have some or all of the necessary features disabled. The most straigtforward way to access Android environment providing root access and some BPF capabilities (BPF + Uprobes) is to use an Android emulator **without** Google Play Store. The default API 35 artifacts require Android 15 (API 35) or newer. To read more on preparing other devices see [dedicated documentation](docs/phone_setup.md).
 
 # Variables impacting build process
 - `THREADS` - number of jobs to run simultaneously. This value is passed to nested make invocations via `-j` option. The Docker and Resolute entry scripts default to `nproc`; invoking Make directly without either wrapper retains the Makefile default of 4.
-- `NDK_API` - Android API level used by the NDK toolchain. The Docker and Resolute entry scripts default to API 35.
+- `NDK_API` - Android API level used by the NDK toolchain. Make, Docker and the Resolute entry script default to API 35 from `projects/versions.mk`.
+- `NDK_PATH` - NDK installation directory; Make defaults to `/mnt/develop/android-ndk-$(NDK_VERSION)`. Linux x86_64 selects `linux-x86_64`, and Linux AArch64 selects `linux-aarch64`.
 - `NDK_ARCH` - x86_64 or arm64. Architecture to cross compile for. The default value is arm64
 - `BUILD_TYPE` - Release or Debug, controlls amount of debug info to be included in resulting libs and binaries. The default value is Release.
 
