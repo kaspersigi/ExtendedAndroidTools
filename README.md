@@ -105,7 +105,7 @@ the release workflow build and verify the arm64 and x86_64 artifacts, then
 publish all six product files and `SHA256SUMS` to GitHub Releases. All jobs use
 Ubuntu 26.04; native builds use `THREADS=2` per job.
 
-See [the CI documentation](scripts/README.md#13-github-actions-构建环境) for the
+See [the CI documentation](scripts/README.md#13-github-actions-build-environment) for the
 workflow dependencies, artifacts, and caching policy.
 
 # Sysroots
