@@ -2,6 +2,25 @@
 
 Notable changes to this independently maintained fork are recorded here.
 
+## v2.0.3
+
+### Changed
+
+- Updated bpftrace to 0.27.1, libbpf to 1.8.0, elfutils to 0.197, OpenSSL to
+  4.1.0, Python to 3.15.2 and its bundled pip to 26.2.2. LLVM/Clang remains
+  locked at 21.1.8 and the NDK remains at r30.
+- Updated CMake to 4.4.5, Buck2 to the 2026-10-15 release with its matching
+  prelude, Black to 26.10.1 and setuptools to 84.2.1. Refreshed the Flex and
+  Gnulib commit pins and the CMake, elfutils and Buck2 archive checksums.
+- Fixed OpenSSL 4.1 builds outside the source tree with `no-apps`: create the
+  generated app-header directory and patch error-state filename handling so
+  source paths containing `projects` are preserved.
+- Enabled Flex's bundled `ngettext` fallback for builds without translations,
+  and kept Android pkg-config paths out of the host CMake bootstrap.
+- Rebased the Android tracefs fallback patch onto the pristine bpftrace
+  v0.27.1 tag. Added `make check-bpftrace-patches` to apply both patches and
+  fault-test the attachment class; CI now gates tag releases on these checks.
+
 ## v2.0.2
 
 ### Changed

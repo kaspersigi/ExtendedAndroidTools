@@ -95,6 +95,11 @@ projects/bpftrace/sources:
 
 $(eval $(call project-source-signature,bpftrace,git:$(BPFTRACE_REPO)@$(BPFTRACE_COMMIT),$(BPFTRACE_TRACEFS_PATCH) projects/bpftrace/version_from_git_tag.patch))
 
+# Validate the selected release patches without building LLVM or Android tools.
+.PHONY: check-bpftrace-patches
+check-bpftrace-patches: projects/bpftrace/sources
+	python3 scripts/test-bpftrace-tracefs.py --source-dir $(BPFTRACE_SRCS)
+
 # Build a standalone static bpftrace without replacing the dynamic bpftrace
 # installed under out/android/<arch>. Its dependencies and LLVM installation
 # are shared with bpftools/bpftools-min, while its CMake cache stays isolated.

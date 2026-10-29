@@ -23,6 +23,7 @@ $(FLEX_HOST_BUILD_DIR):
 	cd $@ && $(FLEX_SRCS)/configure --disable-bootstrap --prefix=$(abspath $(HOST_OUT_DIR))
 
 FLEX_REPO = https://github.com/westes/flex.git
+FLEX_PATCH = projects/flex/ngettext_no_nls.patch
 projects/flex/sources:
 ifeq ($(shell whoami), vagrant)
 	@set -eu; \
@@ -34,6 +35,7 @@ ifeq ($(shell whoami), vagrant)
 	git -C "$$tmp_sources" remote add origin $(FLEX_REPO); \
 	git -C "$$tmp_sources" fetch --depth=1 --no-tags origin $(FLEX_COMMIT_HASH); \
 	git -C "$$tmp_sources" checkout --detach FETCH_HEAD; \
+	git -C "$$tmp_sources" apply --verbose $(abspath $(FLEX_PATCH)); \
 	cd "$$tmp_sources" && ./autogen.sh; \
 	mv "$$tmp_sources" "$$source_target"; \
 	trap - 0 1 2 3 15
@@ -43,8 +45,9 @@ else
 	git -C $@ remote add origin $(FLEX_REPO); \
 	git -C $@ fetch --depth=1 --no-tags origin $(FLEX_COMMIT_HASH); \
 	git -C $@ checkout --detach FETCH_HEAD; \
+	git -C $@ apply --verbose $(abspath $(FLEX_PATCH)); \
 	cd $@ && autoreconf -i -f; \
 	$(source-transaction-commit)
 endif
 
-$(eval $(call project-source-signature,flex,git:$(FLEX_REPO)@$(FLEX_COMMIT_HASH)))
+$(eval $(call project-source-signature,flex,git:$(FLEX_REPO)@$(FLEX_COMMIT_HASH),$(FLEX_PATCH)))

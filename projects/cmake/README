@@ -5,3 +5,7 @@ license: BSD 3-clause
 license url: https://cmake.org/licensing/
 
 The selected release is defined in `projects/versions.mk`.
+
+The host build uses the host pkg-config prefix even when reached through an
+Android dependency. This prevents Android OpenSSL from entering native link
+checks during CMake's bootstrap.

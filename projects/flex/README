@@ -8,5 +8,9 @@ license url: https://github.com/westes/flex/blob/master/COPYING
 The selected upstream commit is defined in `projects/versions.mk`.
 
 Building
-flex is packaged with autoconf and builds without major problems. The only catch
-is that autoreconf is required.
+flex is packaged with autoconf and requires autoreconf.
+
+`ngettext_no_nls.patch` includes the bundled gettext compatibility header even
+when translations are disabled. The selected upstream commit uses `ngettext`
+in scanner diagnostics, so Android and bootstrap builds need its fallback.
+The patch participates in the source signature.

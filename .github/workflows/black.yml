@@ -25,8 +25,10 @@ jobs:
           persist-credentials: false
       - name: Check NDK configuration and host selection
         run: python3 scripts/test-ndk-config.py
-      - uses: psf/black@87928e6d6761a4a6d22250e1fee5601b3998086e # 26.5.1
+      - name: Validate selected bpftrace patches and tracefs fallback
+        run: make check-bpftrace-patches
+      - uses: psf/black@258e7dbf348bc23cb70b8cdf693481c04634ebcc # 26.10.1
         with:
-          version: "26.5.1"
+          version: "26.10.1"
           options: "--check --verbose"
           src: "./projects/jdwp ./scripts/test-ndk-config.py ./scripts/test-bpftrace-tracefs.py"

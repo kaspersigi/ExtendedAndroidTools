@@ -2,6 +2,11 @@
 
 $(eval $(call project-define,cmake))
 
+# Android Python dependencies can otherwise pass their pkg-config search path
+# into this host build and make it link against Android OpenSSL libraries.
+$(CMAKE_HOST) $(CMAKE_HOST_BUILD_DIR): \
+    export PKG_CONFIG_LIBDIR=$(abspath $(HOST_OUT_DIR)/lib/pkgconfig)
+
 $(CMAKE_HOST):
 	cd $(CMAKE_HOST_BUILD_DIR) && make install -j $(THREADS)
 	touch $@

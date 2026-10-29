@@ -1,0 +1,14 @@
+diff --git a/util/mkerr.pl b/util/mkerr.pl
+index 16555d4..c0ad4f8 100755
+--- a/util/mkerr.pl
++++ b/util/mkerr.pl
+@@ -196,7 +196,8 @@ close IN;
+
+ if ( ! $statefile ) {
+     $statefile = $config;
+-    $statefile =~ s/.ec/.txt/;
++    # Only replace the filename extension, not components such as "projects".
++    $statefile =~ s/\.ec$/.txt/;
+ }
+
+ # Unless a rewrite or a report was explicitly requested, skip the run

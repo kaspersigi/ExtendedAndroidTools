@@ -31,6 +31,7 @@ $(OPENSSL_ANDROID_CONFIG_FILE): scripts/update-signature.sh | $(ANDROID_BUILD_DI
 	@scripts/update-signature.sh $@ \
 		"PROJECT=openssl-android" \
 		"OPENSSL_VERSION=$(OPENSSL_VERSION)" \
+		"PATCH_SHA256=$(shell sha256sum $(OPENSSL_PATCH) | cut -d ' ' -f 1)" \
 		"SOURCE_REVISION=$(shell git -C $(OPENSSL_SRCS) rev-parse HEAD 2>/dev/null || echo unavailable)" \
 		"OPENSSL_TARGET=$(OPENSSL_ANDROID_TARGET)" \
 		"OPENSSL_BUILD_TYPE_OPTION=$(OPENSSL_BUILD_TYPE_OPTION)" \
@@ -52,6 +53,8 @@ $(OPENSSL_ANDROID_BUILD_DIR):
 
 $(OPENSSL_ANDROID_CONFIGURED_FILE): $(OPENSSL_ANDROID_CONFIG_FILE)
 $(OPENSSL_ANDROID_CONFIGURED_FILE): | $(OPENSSL_ANDROID_BUILD_DIR)
+	# OpenSSL 4.1 generates apps/include/configuration.h even with no-apps.
+	mkdir -p $(OPENSSL_ANDROID_BUILD_DIR)/apps/include
 	cd $(OPENSSL_ANDROID_BUILD_DIR) && $(OPENSSL_ANDROID_ENV) $(OPENSSL_SRCS)/Configure \
 		$(OPENSSL_ANDROID_TARGET) \
 		$(OPENSSL_BUILD_TYPE_OPTION) \
@@ -64,9 +67,12 @@ $(OPENSSL_ANDROID_CONFIGURED_FILE): | $(OPENSSL_ANDROID_BUILD_DIR)
 	touch $@
 
 OPENSSL_REPO := https://github.com/openssl/openssl.git
+OPENSSL_PATCH := projects/openssl/mkerr_statefile.patch
 projects/openssl/sources:
 	@$(call source-transaction-begin,$@); \
 	git clone $(OPENSSL_REPO) $@ --depth=1 -b $(OPENSSL_BRANCH_OR_TAG); \
+	cd $@; \
+	git apply --verbose $(abspath $(OPENSSL_PATCH)); \
 	$(source-transaction-commit)
 
-$(eval $(call project-source-signature,openssl,git:$(OPENSSL_REPO)@$(OPENSSL_BRANCH_OR_TAG)))
+$(eval $(call project-source-signature,openssl,git:$(OPENSSL_REPO)@$(OPENSSL_BRANCH_OR_TAG),$(OPENSSL_PATCH)))

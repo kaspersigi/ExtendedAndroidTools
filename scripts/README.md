@@ -747,20 +747,22 @@ version comment, and `version` input. Other project versions remain solely in
 `projects/versions.mk`.
 
 The bpftrace tracefs patch filename is derived from `BPFTRACE_COMMIT`: for example,
-`v0.27.0` uses `projects/bpftrace/tracefs_fallback_v0.27.0.patch`. Recheck the patch
+`v0.27.1` uses `projects/bpftrace/tracefs_fallback_v0.27.1.patch`. Recheck the patch
 against the corresponding upstream tag when upgrading. Build rules include the patch
 content in the source signature, and both dynamic and standalone static builds apply it.
-After fetching sources, run:
+Fetch the selected release and validate both patches with:
 
 ```bash
-python3 scripts/test-bpftrace-tracefs.py
+make check-bpftrace-patches
 ```
 
 The script applies the patch to the original tag in a temporary directory. Using the
 host C++17 compiler, it injects failures into the actual patched kprobe attachment class
 and checks file descriptor cleanup, event rollback, and event name isolation. These
 tests require neither root nor a device. Actual kernel tracefs attachment still requires
-validation on a suitably privileged device.
+validation on a suitably privileged device. CI runs the same target on branch pushes,
+pull requests, and as a prerequisite for tag releases. To check an existing checkout
+without fetching, run `python3 scripts/test-bpftrace-tracefs.py --source-dir <checkout>`.
 
 Set the complete Python version only once in the manifest:
 
@@ -1325,7 +1327,7 @@ directories, and packaged outputs.
 
 Commit checks and tag releases have separate triggers:
 
-- Branch pushes and pull requests run NDK configuration regression tests and Python formatting checks in `black.yml`, plus JDWP tests, type checks, and formatting checks in `jdwp.yml`. They do not build Android release outputs or publish a Release.
+- Branch pushes and pull requests run NDK configuration regression tests, bpftrace patch/fallback tests, and Python formatting checks in `black.yml`, plus JDWP tests, type checks, and formatting checks in `jdwp.yml`. They do not build Android release outputs or publish a Release.
 - Pushing a `v*` tag runs `release.yml`, which reuses both check workflows through `workflow_call`. Both checks must pass before Android builds for both architectures, output validation, and publication begin.
 - Other tags do not trigger these workflows. Direct push triggers for check workflows match branches only, preventing duplicate checks outside the `v*` release workflow.
 

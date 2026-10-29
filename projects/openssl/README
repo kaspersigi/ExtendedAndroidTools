@@ -5,7 +5,7 @@ Home page: https://openssl-library.org/
 license: Apache License 2.0
 license url: https://github.com/openssl/openssl/blob/master/LICENSE.txt
 
-The selected LTS release is defined in `projects/versions.mk`.
+The selected release is defined in `projects/versions.mk`.
 
 Building:
 - Android is configured with the architecture-specific OpenSSL target.
@@ -15,3 +15,10 @@ Building:
   modules load them from the packaged sysroot at runtime.
 - Command-line applications and documentation are omitted from the Android
   build because this project consumes the libraries only.
+- OpenSSL 4.1 generates an app configuration header even with `no-apps`;
+  the build rule creates `apps/include` in the build directory first.
+- `mkerr_statefile.patch` limits the error-state filename substitution to the
+  `.ec` extension. Otherwise, the new error-header generation in 4.1 rewrites
+  `projects` to `pro.txtts` in out-of-tree source paths and fails. The patch
+  participates in the source and configuration signatures so patch updates
+  reconfigure OpenSSL before compilation.

@@ -9,7 +9,7 @@ The selected release is defined in `projects/versions.mk`.
 
 Android tracefs fallback:
 - `build.mk` applies `tracefs_fallback_$(BPFTRACE_COMMIT).patch`, currently
-  `tracefs_fallback_v0.27.0.patch`, against the selected upstream release tag.
+  `tracefs_fallback_v0.27.1.patch`, against the selected upstream release tag.
   Patch contents participate in the source signature, including for the
   standalone static build. A version update requires a matching patch.
 - If libbpf returns EPERM or ENOENT for a single kprobe/kretprobe, the fallback
@@ -19,8 +19,9 @@ Android tracefs fallback:
 - Exact kprobes may proceed when the kernel's traceable-function list is empty;
   the kernel still validates the attachment. This does not enable wildcard
   expansion without a function list, or bypass kernel permission checks.
-- Run `python3 scripts/test-bpftrace-tracefs.py` from the repository root after
-  fetching bpftrace. It applies both patches to pristine tagged files in a
+- Run `make check-bpftrace-patches` from the repository root to fetch the selected
+  bpftrace release and validate it. CI runs the same target before release builds.
+  It applies both patches to pristine tagged files in a
   temporary directory and fault-tests the actual patched attachment class with
   mocked kernel/libbpf calls. It does not test real kernel attachment.
 
